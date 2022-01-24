@@ -1,0 +1,26 @@
+[package]
+name = "advection"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clock-measure = { path = "../clocks-measure" }
+input-structure = { path = "../input-pstructures"}
+clap="*"
+#clippy = "*"
+colour="*"
+tcprint="*"
+colorify="*"
+tutil="*"
+image = "0.23.14"
+ffi = "*"
+crossbeam = "0.8.1"
+tokio = "1.15.0"
+num = "0.4.0"
+libc = "0.2.112"
+async-std = "1.10.0"
+cc = "1.0.72"
+
+
