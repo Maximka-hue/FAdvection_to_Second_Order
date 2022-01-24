@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "advection",
+    "clocks-measure",
+    "input-pstructures",
+]
