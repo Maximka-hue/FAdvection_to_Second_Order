@@ -3,7 +3,8 @@
 ///Create file structures from which programm will read data
 extern crate clap;
 use clap::{Arg, App, SubCommand};
-use crate::initial_data_utils::function_utils::{cfutils::{ArgumentParseFilesError, approx_equal}, print_macros::{rainbowify, flush_styles, macro_lrls::{pt, mypt}}};
+use crate::initial_data_utils::function_utils::{cfutils::{ArgumentParseFilesError, approx_equal}, print_macros::{rainbowify, flush_styles, 
+    macro_lrls::{pt, mypt, generate_random_parameters}}};
 /* Building struct */
 pub use derive_builder::Builder;
 pub use std::borrow::Cow;
@@ -14,6 +15,7 @@ pub use std::path::{self, PathBuf, Path};
 use std::time::{self, Instant, Duration};
 use tcprint::{tcprintln , BasicColors, ColorPrintState, Color, ColorSpec};
 use std::thread;
+use itertools::Itertools;
 ///This enumerattion determine type of task: Burger or Advection.
 ///Specificity of the **first** entered argument (type of equation)
 //Специфика введенного первого аргумента (типа уравнения)
@@ -67,7 +69,6 @@ pub struct FileParametres{
     #[builder(default = "(0 as f64, 1 as f64)")]
     pub margin_domain:(f64, f64),
     pub time_eval_period_stage: (f64, f64, Option<bool>),
-    #[builder(default = "0_i8")]
     pub bound_type: i8,
     pub init_type: i8,
     pub init_conditions: (f64, f64, Option<f64>, Option<f64>),
@@ -75,7 +76,8 @@ pub struct FileParametres{
     #[builder(setter(into))]
     pub n_corant: f64,
 //#[builder(setter(into, strip_option), default)]- don't work
-    pub add_args: (Option<TaskType>, Option<i8>, Option<bool>)//will be last background_mc additional_correction
+//will be last background_mc additional_correction
+    pub add_args: (Option<TaskType>, Option<i8>, Option<bool>)
     //pub add_args: Vec<Option<TypeTsk>, Option<i8>, Option<bool>> I want like this, but don't know way
 }
 ///Boundary, time and equation check in parameters
@@ -188,8 +190,51 @@ impl FileParametres {
                 add_args: (Some(add_args.0), Some(add_args.1), Some(add_args.2)),
         }
     }
+}
 //*****************************************************************************************************************************
-}//Some(SelectSpecTypePrp::None),/**/
+pub fn parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool){
+    let (eq_type, bound_type, init_type, add_args,
+        time_eval_period_stage, init_conditions, margin_domain,
+        quantity_split_nodes, n_corant):
+        (i8, i8, i8, i8,
+        (f64, f64), (f64, f64, f64, f64), (f64, f64),
+        f64, f64);
+    let random_parameters = generate_random_parameters!().unwrap();
+    let int_input = random_parameters.0;
+    let float_input = random_parameters.1;
+    assert_eq!(int_input.len(), 4);
+    assert_eq!(float_input.len(), 10);
+    if let Some((req_type, rbound_type, rinit_type, radd_args)) = int_input.into_iter().tuples().next(){
+        eq_type= req_type; bound_type= rbound_type; init_type= rinit_type; add_args= radd_args;
+    };
+    if let Some((rtime_eval_period_stage, rt_one, rinit_conditions, ri_one, ri_two, ri_three, rmargin_domain, rm_one, rquantity_split_nodes, rn_corant)) = 
+        float_input.into_iter().tuples().next(){
+       //This is arbitrary function for reducing output time[second argument]
+        time_eval_period_stage = (rt_one, rtime_eval_period_stage / (if rt_one>1.0{rt_one % 3.0} else{rt_one * 10.0 }));
+        init_conditions = (rinit_conditions, ri_one, ri_two, ri_three);
+        if RANDOM_TRANSLATE_MARGINE_BOUNDARY{ 
+            let mar_dif = rm_one - rmargin_domain;
+            margin_domain = (0.0, if mar_dif< 1.0 {mar_dif * 4.0} else{ mar_dif });
+        }
+        else{
+            margin_domain = (rmargin_domain, rm_one);
+        }
+        quantity_split_nodes = rquantity_split_nodes;
+        n_corant = rn_corant;
+        println!("Parameters will be: \ntime_eval_period_stage: {}\ninit_conditions: {init_conditions:#?}\n margin_domain: {}\ntime_eval_period_stage: {}
+        \tn_corant: {n_corant} ",
+        ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(240)).fg(ansi_term::Colour::Fixed(45)).paint(format!("{:#?}", time_eval_period_stage)),
+        ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(240)).fg(ansi_term::Colour::Fixed(45)).paint(format!("{:#?}", margin_domain)),
+        ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(50)).fg(ansi_term::Colour::Fixed(200)).paint(format!("{:#?}", quantity_split_nodes)));
+    }
+    let all_datas: FileParametres;
+        all_datas = FileParametres::new(eq_type, (x_min,x_max),
+        (t1, t2), new_init_data[3].to_string(), new_init_data[4].to_string(), (i1, i2, i3, 0_f32),
+        new_init_data[6].to_string(), new_init_data[7].to_string(),
+        //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
+        (TypeTsk::TRANSFER{a: new_init_data[8].trim().parse().unwrap_or(0_f32)}, 0_i8, false));
+}
+/**/
 #[derive(Default, Debug, PartialEq)]
 struct MyConfiguration {
     // Option defaults to None
@@ -230,46 +275,4 @@ pub fn initial_information_of_advection() -> Instant {
         flush_styles();
 }
 now
-}
-fn advection_input(){
-    let matches = App::new("Advection")
-    .version("0.1")
-    .author("Maxim <mmmaximus1403@gmail.com>")
-    .about("Does awesome things")
-    .arg(Arg::with_name("CONFIG")
-         .short('c')
-         .long("config")
-         .help("Sets a custom config file")
-         .takes_value(true)).get_matches();
-         let config = matches.value_of("CONFIG").unwrap_or("default.conf");
-    println!("Value for config: {}", config);
-}
-mod StrctOptImpl{
-    use super::{StructOpt, PathBuf};
-    //___________________________________________________________________________________________________
-#[derive(Debug, StructOpt)]
-#[structopt (name = "debug_parametres", about = "additional info", author= "M")]// name(arg1, arg2, ...) form.
-pub struct DebOpt{
-    /// Activate debug mode --debug
-    // short and long flags (-d, --debug) will be deduced from the field's name
-    #[structopt(short= "d", long= "debug", help = "Pass `-h`: debug is needed to see intermidiate steps of computation")]
-    debug: bool,
-    #[structopt(short= "s", long= "switchtime", help = "Pass `-h`: True- Measure on world time, false- on period t")]
-    time_switch: bool,
-    ///choose to apply/not correction Mc
-    #[structopt(short = "c", long = "correct", help = "Pass `-h`: correction is needed to optimize computation")]
-    correction: bool,
-    /// Output file, stdout if not present
-    #[structopt(parse(from_os_str))]
-    pub output: Option<PathBuf>,
-    /// Where to write the output: to `stdout` or `file`
-    #[structopt(short="out", default_value = "stdout", case_insensitive = true)]
-    out_type: String,
-    /// File name: only required when `out-type` is set to `file`
-    #[structopt(name = "FILE", required_if("out-type", "file"))]
-    pub file_name: Vec<String>,
-    #[structopt(name = "AmountOfFiles", short = "af", long ="amount_of_files", default_value = "3",
-        help = "Pass `-h`: These will process exact amount of initial data files")]
-    pub amount_of_files: i32,
-    }
 }
