@@ -1,11 +1,13 @@
 //pub use crate::initial_data_utils::function_utils::cfutils::shorthand_functions::pt;
 use crate::initial_data_utils::function_utils::cfutils::{PrimaryColor, PrintStyle};
-use crate::initial_data_utils::function_utils::cfutils::{ForegroundColor, BackgroundColor};
-pub use std::borrow::Cow;
+use crate::{initial_data_utils::function_utils::cfutils::{ForegroundColor, BackgroundColor}};
+use std::borrow::Cow;
 pub use better_term::{flush_styles, rainbowify};
 pub use termion::color as termcolor;
+use ansi_term::{self, Colour::Fixed};
 use std::fmt::Debug;
-
+extern crate rand;
+use rand::{prelude::*, Rng, SeedableRng};
 use simple_colors;
 
 pub mod macro_lrls {
@@ -80,6 +82,14 @@ macro_rules! fill_none {
     #[allow(missing_docs)]
     #[warn(unused_macros)]
     #[macro_export]
+    macro_rules! generate_random_parameters {
+        ($($arg:expr),*) => {
+            $crate::fill_none!(($crate::initial_data_utils::function_utils::print_macros::shorthand_functions::generate_random_parameters)() [$($arg,)*] [? ? ])
+        }
+    }
+    #[allow(missing_docs)]
+    #[warn(unused_macros)]
+    #[macro_export]
     macro_rules! mypt {
      ($($arg:expr),*) => {
          $crate::fill_none!(($crate::initial_data_utils::function_utils::print_macros::shorthand_functions::pt)() [$($arg,)*] [! ? ? ? ?])
@@ -93,6 +103,7 @@ macro_rules! fill_none {
                   io::stdin().read_line(&mut $x).unwrap();
              });
         }
+pub use generate_random_parameters;
 pub use {mypt,pt};
 pub(crate) use scanline;
 }
@@ -100,7 +111,7 @@ pub mod shorthand_functions {
      use std::time::{Instant};
      use chrono::{Local};
      use super::*;
-     pub const  PRINTFUNC_DBGOUT: bool = true;
+     pub const  PRINTFUNC_DBGOUT: bool = false;
 //_____________________________________________________//
 fn define_colour_style(context: &str, desired_colour: Option<PrintStyle>) -> PrintStyle {
      let mut colour = PrintStyle::Dft;
@@ -220,11 +231,41 @@ where S: Into<Cow<'a, str>> + Debug {
 let colour_style = define_colour_style(&context.to_lowercase(), None);//.expect("extracting color style in pt macro");
 if PRINTFUNC_DBGOUT {println!("{:?}", colour_style);}
 let local_time = Local::now();
-
 if context.contains("time") || context.contains("dbg") || context.contains("debug"){
      green!("Local time: ");
-     green!("\n\t\t{}\n", local_time);
+     ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(221)).fg(ansi_term::Colour::Fixed(124)).paint(&format!("\n\t\t{ }\n", local_time)[..]);
           }
 green!("{} {}", &text.into(), termcolor::Fg(termcolor::Reset));
+     }
+
+pub fn generate_random_parameters(floating_point_numbers: Option<u8>, integer_numbers: Option<u8>) -> Result<((Vec<i8>, Vec<f64>)), ()>{
+          const RANDOM_INTEGERS: u8 = 6;
+          let mut float_values = Vec::<f64>::with_capacity(10);
+          let mut integer_vec_values: Vec<i8>;
+          let integer_number: usize;
+          if let Some(integer_number) = integer_numbers {
+               integer_vec_values = Vec::<i8>::with_capacity(integer_number  as usize);
+          }
+          let unidist = rand::distributions::Uniform::new_inclusive::<f64, f64>(1.0, 100.0);
+          let mut random_example = thread_rng();
+          let random_parameters: (Vec<i8>, Vec<f64>);
+          //11 required and 5 Optional + Tasktype = 4_i8 + 10_f64 + 2 bool and Tasktype
+          let mut integer_values = [0u8; 4];
+          for _ in 0..10 {
+          //begin (inclusive) to end (exclusive)
+               float_values.push(random_example.gen_range(0.5_f64..20_f64));
+          }
+          //people.sort_by_key(|person| person.height / person.weight.pow(2.0));
+          //people.sort_by(|a, b| (a.height / a.weigh.pow(2.0)).partial_cmp(b.height / b.weight.pow(2.0))).unwrap()
+          float_values.sort_by(|i, j| i.partial_cmp(j).unwrap());
+          random_example.fill_bytes(&mut integer_values);
+          let random_integers: Vec<i8> = integer_values.map(|inv| (inv % 2) as i8).to_vec();
+          println!("{} {:#?}\n {:#?}" , ansi_term::Style::new().on(ansi_term::Colour::Fixed(28)).fg(ansi_term::Colour::Fixed(128)).paint("Generating random parameters: "),
+               &random_integers , &float_values);
+          random_parameters = (random_integers, float_values);
+          //let (rtime_eval_period_stage, rinit_conditions , rmargin_domain, rquantity_split_nodes, rn_corant) =    
+          println!("{} {:#?}\n", ansi_term::Style::new().on(ansi_term::Colour::Fixed(28)).fg(ansi_term::Colour::Fixed(128)).paint("Total random parameters: "),
+               &random_parameters);
+          Ok(random_parameters)
      }
 }
