@@ -1950,3 +1950,135 @@ for line in contents.lines() {
     results
 }
 // =================================================================
+
+#[derive(Debug, Clone)]
+pub enum ErrInTransferTask{
+    DebOptim(i32),
+    FileParams(i32),
+    ExecMain(String)
+}
+
+use std::io::Write;
+fn main()-> Result<(), ErrInTransferTask>{
+let mut search_error: ErrInTransferTask;//will find error in separate part of program
+let mut output_path = PathBuf::new();//Will write results into
+
+
+    Ok(())
+}
+fn count1_norm(prev: Vec<f32>,current: Vec<f32>, temp: Vec<f32>){
+    
+}
+
+fn test<T: AsRef<str>>(inp: &[T]) {
+    for x in inp { print!("{} ", x.as_ref()) }
+    println!("");
+}
+//Let's create struct to save vector with initial values and maximal velocity in it.
+use std::fmt::{Debug, Display};
+#[derive(Builder, Debug, PartialEq)]
+struct IVdata<T: Display>{
+    ivector: Vec<T>,
+#[builder(default = "100")]
+    ivecs: usize 
+}
+impl<T: Display> IVdata<T> 
+{/*
+    fn rung<U: Sized, V: Debug> (c:U, w:U, h: U, vec_prev: V, dx: U, debug_q: Option<i16>, domain: Option<(i16, i16)>)
+    where U: Debug
+    {
+        println!("Ступенька под уравнеие переноса)"); 
+        //We can't access values in vector by f32, so we count steps from left bound
+                        let dip = (w / dx) as u32; //Количество кусочков внутри, dx=0.01,0.1...;
+                        let start = ((c-w/ 2 as U)/dx); // as f32 | Two times unwrap the same!
+                        if start >  domain.unwrap_or((0_i16,0_i16)).0 as f32 || start< domain.unwrap_or((0_i16,0_i16)).0  {
+                            println!("Левая|правая точка ступенька вне заданной области");
+                            panic!("Out of domain!");} 
+                        for n in 0..dip{
+                            vec_prev[start as usize + n as usize] = h.max(-h) as f32;
+                            if n%25==0 {println!("Получившиеся значения с шагом {} равны {}\n",n as f32 + start , vec_prev[n as usize+start as usize]);}}}
+    }*/
+}
+//For simplicity without default)
+#[warn(unused_macros)]
+macro_rules! rung {
+    ($a: expr, $b: expr, $c: expr, $d: expr,$step: expr, $e: expr) => {
+        rung($a, $b, $c, $d, $step, $e)
+    };
+    ($a: expr, $b: expr, $c: expr, $d: expr, $step: expr) => {
+        rung($a, $b, $c, $d, $step, step*100)
+    };
+}
+
+/*
+for entry in WalkDir::new("foo").min_depth(1).max_depth(3) {
+        println!("{}", entry?.path().display());
+    }
+    */
+/*
+pub fn pt<'a, S: AsRef<str>>(data: S, text: Option<S>)
+where S: Into<Cow<'a, str>>{
+    println!("{}, {:>?}", data.into(), text.as_ref().map(|r| r.as_ref().to_string()));
+}
+//*****************************************************************************************************************************
+}//Some(SelectSpecTypePrp::None),/**/
+#[derive(Debug, Clone)]
+pub enum ErrInTransferTask{
+    DebOptim(i32),
+    FileParams(i32),
+    ExecMain(String)
+}
+
+use std::io::Write;
+fn main()-> Result<(), ErrInTransferTask>{
+let mut search_error: ErrInTransferTask;//will find error in separate part of program
+let mut output_path = PathBuf::new();//Will write results into
+
+
+    Ok(())
+}
+fn count1_norm(prev: Vec<f32>,current: Vec<f32>, temp: Vec<f32>){
+    
+}
+fn test<T: AsRef<str>>(inp: &[T]) {
+    for x in inp { print!("{} ", x.as_ref()) }
+    println!("");
+}
+//Let's create struct to save vector with initial values and maximal velocity in it.
+use std::fmt::{Debug, Display};
+#[derive(Builder, Debug, PartialEq)]
+struct IVdata<T: Display>{
+    ivector: Vec<T>,
+#[builder(default = "100")]
+    ivecs: usize 
+}
+impl<T: Display> IVdata<T> 
+{/*
+    fn rung<U: Sized, V: Debug> (c:U, w:U, h: U, vec_prev: V, dx: U, debug_q: Option<i16>, domain: Option<(i16, i16)>)
+    where U: Debug
+    {
+        println!("Ступенька под уравнеие переноса)"); 
+        //We can't access values in vector by f32, so we count steps from left bound
+                        let dip = (w / dx) as u32; //Количество кусочков внутри, dx=0.01,0.1...;
+                        let start = ((c-w/ 2 as U)/dx); // as f32 | Two times unwrap the same!
+                        if start >  domain.unwrap_or((0_i16,0_i16)).0 as f32 || start< domain.unwrap_or((0_i16,0_i16)).0  {
+                            println!("Левая|правая точка ступенька вне заданной области");
+                            panic!("Out of domain!");} 
+                        for n in 0..dip{
+                            vec_prev[start as usize + n as usize] = h.max(-h) as f32;
+                            if n%25==0 {println!("Получившиеся значения с шагом {} равны {}\n",n as f32 + start , vec_prev[n as usize+start as usize]);}}}
+    }*/
+}
+
+/*
+#[cfg(test)]
+mod tests {
+use super::*;
+fn try_parse(){
+    let opt = DebOpt::from_args();
+    println!("{:?}", opt);
+    }
+fn main(){
+    try_parse()
+    }
+}*/
