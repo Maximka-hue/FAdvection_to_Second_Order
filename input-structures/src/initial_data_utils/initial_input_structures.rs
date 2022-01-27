@@ -1,21 +1,19 @@
 //#[crate_type = "staticlib"]
 ///Deduce types of variables, store arguments from parsing input
 ///Create file structures from which programm will read data
-extern crate clap;
-use clap::{Arg, App, SubCommand};
 use crate::initial_data_utils::function_utils::{cfutils::{ArgumentParseFilesError, approx_equal}, print_macros::{rainbowify, flush_styles, 
     macro_lrls::{pt, mypt, generate_random_parameters}}};
 /* Building struct */
 pub use derive_builder::Builder;
 pub use std::borrow::Cow;
-pub use structopt::StructOpt;
 pub use std::default::Default;
 use std::fs::{self, File, write, OpenOptions};
 pub use std::path::{self, PathBuf, Path};
 use std::time::{self, Instant, Duration};
 use tcprint::{tcprintln , BasicColors, ColorPrintState, Color, ColorSpec};
 use std::thread;
-use itertools::Itertools;
+use itertools::{cons_tuples, Itertools};
+const SWITCH_TIME: bool= false;
 ///This enumerattion determine type of task: Burger or Advection.
 ///Specificity of the **first** entered argument (type of equation)
 //Специфика введенного первого аргумента (типа уравнения)
@@ -26,9 +24,9 @@ pub enum TaskType{
 }
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum BurgerOrder{
-    burger_first_order, 
-    burger_second_order,
-    arbitrary
+    BurgerFirstOrder, 
+    BurgerSecondOrder,
+    Arbitrary
 }
 impl Default for TaskType {
     fn default() -> Self { TaskType::Transfer{a: 1_f64} }
@@ -149,13 +147,13 @@ impl FileParametresBuilder {
 impl FileParametres {
     pub fn first_initializing(order_of_equation: u16) -> std::result::Result<FileParametres, ArgumentParseFilesError> {
         let task_order:BurgerOrder = if let  0..=2 = order_of_equation { 
-            BurgerOrder::burger_first_order
+            BurgerOrder::BurgerFirstOrder
         }
         else if order_of_equation == 2 {
-            BurgerOrder::burger_second_order
+            BurgerOrder::BurgerSecondOrder
         }
         else{
-            BurgerOrder::arbitrary
+            BurgerOrder::Arbitrary
         };
         let datas = FileParametresBuilder::default()
             .eq_type(0)
@@ -169,36 +167,59 @@ impl FileParametres {
             .add_args((Some(TaskType::Burger(task_order, "Some(None) speed initial".to_string())), Some(0_i8), Some(false)))
             .build().unwrap();//.map_err(|_| ErrInTransferTask::FileParams)
         println!("{}", ansi_term::Colour::Green.paint("Initializing struct with default zeros\n"));
-        Ok(datas)}     
-    pub fn new(eq_type:String,
-        margin_domain:(f64, f64),
-        time_eval_period_stage:(f64, f64, bool),
-        bound_type: String,
-        init_type: String,
-        init_conditions: (f64, f64, f64, f64),
-        quantity_split_nodes: String,//Option<i32>,
-        n_corant: String,
-        add_args: (TaskType, i8, bool)) -> FileParametres {
-            FileParametres{eq_type: eq_type.trim().parse::<i8>().unwrap(), //ret: trim-slice, parse- to specified type
-                margin_domain: (margin_domain.0, margin_domain.1),
-                bound_type: bound_type.trim().parse().expect(" "),
-                init_type: init_type.trim().parse().unwrap(),
-                init_conditions:(init_conditions.0, init_conditions.1, Some(init_conditions.2), Some(init_conditions.3)),
-                quantity_split_nodes : quantity_split_nodes.trim().parse().unwrap(),
-                n_corant : n_corant.trim().parse().unwrap(),
-                time_eval_period_stage: (time_eval_period_stage.0, time_eval_period_stage.1 , Some(time_eval_period_stage.2)), 
-                add_args: (Some(add_args.0), Some(add_args.1), Some(add_args.2)),
-        }
+        Ok(datas)
+    }     
+pub fn new(eq_type: i8,
+    margin_domain:(f64, f64),
+    time_eval_period_stage:(f64, f64, bool),
+    bound_type: i8,
+    init_type: i8,
+    init_conditions: (f64, f64, f64, f64),
+    quantity_split_nodes: f64,//Option<i32>,
+    n_corant: f64,
+    add_args: (TaskType, i8, bool)) -> Result<FileParametres, ()> {
+        let new_file_prms = FileParametresBuilder::default()
+            .eq_type(eq_type)
+            .time_eval_period_stage((time_eval_period_stage.0, time_eval_period_stage.1 , Some(time_eval_period_stage.2)))
+            .margin_domain((margin_domain.0, margin_domain.1))
+            .bound_type(bound_type)
+            .init_type(init_type)
+            .init_conditions((init_conditions.0, init_conditions.1, Some(init_conditions.2), Some(init_conditions.3)))
+            .quantity_split_nodes(quantity_split_nodes)
+            .n_corant(n_corant)
+            .add_args((Some(add_args.0), Some(add_args.1), Some(add_args.2)))
+            .build().unwrap();
+        Ok(new_file_prms)
+    }
+}
+pub fn new_from_str(eq_type: String,
+    margin_domain:(f64, f64),
+    time_eval_period_stage:(f64, f64, bool),
+    bound_type: String,
+    init_type: String,
+    init_conditions: (f64, f64, f64, f64),
+    quantity_split_nodes: String,//Option<i32>,
+    n_corant: String,
+    add_args: (TaskType, i8, bool)) -> FileParametres {
+        FileParametres{eq_type: eq_type.trim().parse::<i8>().unwrap(), //ret: trim-slice, parse- to specified type
+            margin_domain: (margin_domain.0, margin_domain.1),
+            bound_type: bound_type.trim().parse().expect(" "),
+            init_type: init_type.trim().parse().unwrap(),
+            init_conditions:(init_conditions.0, init_conditions.1, Some(init_conditions.2), Some(init_conditions.3)),
+            quantity_split_nodes: quantity_split_nodes.trim().parse().unwrap(),
+            n_corant: n_corant.trim().parse().unwrap(),
+            time_eval_period_stage: (time_eval_period_stage.0, time_eval_period_stage.1 , Some(time_eval_period_stage.2)), 
+            add_args: (Some(add_args.0), Some(add_args.1), Some(add_args.2)),
     }
 }
 //*****************************************************************************************************************************
 pub fn parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool){
-    let (eq_type, bound_type, init_type, add_args,
-        time_eval_period_stage, init_conditions, margin_domain,
-        quantity_split_nodes, n_corant):
+    let (mut eq_type, mut bound_type,mut init_type,mut add_args,
+        mut time_eval_period_stage, mut init_conditions, mut margin_domain,
+        mut quantity_split_nodes, mut n_corant):
         (i8, i8, i8, i8,
-        (f64, f64), (f64, f64, f64, f64), (f64, f64),
-        f64, f64);
+        (f64, f64, bool), (f64, f64, f64, f64), (f64, f64),
+        f64, f64) = (0i8, 0i8, 0i8, 0i8, (0f64, 0f64, false), (0f64, 0f64, 0f64, 0f64), (0f64, 0f64),0f64,0f64);
     let random_parameters = generate_random_parameters!().unwrap();
     let int_input = random_parameters.0;
     let float_input = random_parameters.1;
@@ -210,7 +231,7 @@ pub fn parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool){
     if let Some((rtime_eval_period_stage, rt_one, rinit_conditions, ri_one, ri_two, ri_three, rmargin_domain, rm_one, rquantity_split_nodes, rn_corant)) = 
         float_input.into_iter().tuples().next(){
        //This is arbitrary function for reducing output time[second argument]
-        time_eval_period_stage = (rt_one, rtime_eval_period_stage / (if rt_one>1.0{rt_one % 3.0} else{rt_one * 10.0 }));
+        time_eval_period_stage = (rt_one, rtime_eval_period_stage / (if rt_one>1.0{rt_one % 3.0} else{rt_one * 10.0 }), SWITCH_TIME);
         init_conditions = (rinit_conditions, ri_one, ri_two, ri_three);
         if RANDOM_TRANSLATE_MARGINE_BOUNDARY{ 
             let mar_dif = rm_one - rmargin_domain;
@@ -227,12 +248,12 @@ pub fn parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool){
         ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(240)).fg(ansi_term::Colour::Fixed(45)).paint(format!("{:#?}", margin_domain)),
         ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(50)).fg(ansi_term::Colour::Fixed(200)).paint(format!("{:#?}", quantity_split_nodes)));
     }
-    let all_datas: FileParametres;
-        all_datas = FileParametres::new(eq_type, (x_min,x_max),
-        (t1, t2), new_init_data[3].to_string(), new_init_data[4].to_string(), (i1, i2, i3, 0_f32),
-        new_init_data[6].to_string(), new_init_data[7].to_string(),
+    //let velocity = 
+    let all_datas = FileParametres::new(eq_type, margin_domain,
+            time_eval_period_stage, bound_type, init_type, init_conditions,
+            quantity_split_nodes, n_corant,
         //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
-        (TypeTsk::TRANSFER{a: new_init_data[8].trim().parse().unwrap_or(0_f32)}, 0_i8, false));
+        (TaskType::Transfer{a: 2.0}, add_args, false)).expect("Initialization in random generation");
 }
 /**/
 #[derive(Default, Debug, PartialEq)]
