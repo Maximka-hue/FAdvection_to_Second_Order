@@ -20,16 +20,18 @@ extern crate rand;
 use rand::{prelude::*, Rng, SeedableRng};
 pub use structopt::StructOpt;
 extern crate clap;
-use clap::{ColorChoice, Arg, ArgGroup, App, SubCommand};
-use walkdir::{DirEntry, WalkDir};
-use chrono::Duration;
+use clap::{ColorChoice, Arg, ArgGroup, App};
+use walkdir::{DirEntry};
+use std::time::Duration;
 use std::{env, error::Error};
+use std::time::Instant as SInstant;
 
 pub const MY_ARGUMENT_PROCESS: bool = true;
 pub const ARGUMENTS_PRINT: bool = true;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 pub fn advection_input() -> MyResult<(Argumento, MyConfiguration)>{
+    let start = SInstant::now();
     let clap_arguments = App::new("Advection").color(ColorChoice::Always)
     .version("0.1")
     .author("Maxim <mmmaximus1403@gmail.com>")
@@ -138,6 +140,8 @@ pub fn advection_input() -> MyResult<(Argumento, MyConfiguration)>{
         amf: str_to_bool(amf),
         correction: str_to_bool(correction),
         out_style: str_to_bool(out_style),}};
+    let elapsed = start.elapsed();
+    println!("Millis: {} ms", elapsed.as_millis());
     return Ok((argumento, my_config))
 }
 #[derive(Default, Debug, PartialEq)]
