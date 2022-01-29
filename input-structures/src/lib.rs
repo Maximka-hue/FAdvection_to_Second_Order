@@ -2,66 +2,158 @@
 #[warn(unused_imports)]
 #[macro_use] 
 extern crate tcprint;
-#[macro_use]
 extern crate colorify;
 #[macro_use]
 extern crate colour;
+extern crate colored;
+use colored::Colorize;
 pub mod initial_data_utils;
-pub use crate::initial_data_utils::{PathBuf, function_utils::cfutils::{self, op_sys}};
-pub use crate::initial_data_utils::initial_input_structures::{TaskType, TaskTypeCs, FileParametres,FileParametresBuilder, initial_information_of_advection};
-pub use crate::initial_data_utils::function_utils::print_macros::macro_lrls;
+pub use crate::initial_data_utils::{PathBuf,Path, function_utils::cfutils::{self, Argumento, op_sys, parse_positive_int}};
+pub use crate::initial_data_utils::initial_input_structures::{TaskType, TaskTypeCs, FileParametres, FileParametresBuilder, initial_information_of_advection};
+use crate::initial_data_utils::function_utils::print_macros::macro_lrls;
+use rustils::parse::boolean::str_to_bool;
 //use std::time::{Instant};
 //use chrono::{Local};
+use tutil::crayon::Style;
+use tutil::crayon::Color::*;
 extern crate rand;
 use rand::{prelude::*, Rng, SeedableRng};
 pub use structopt::StructOpt;
 extern crate clap;
-use clap::{Arg,ArgGroup, App, SubCommand};
+use clap::{ColorChoice, Arg, ArgGroup, App, SubCommand};
 use walkdir::{DirEntry, WalkDir};
 use chrono::Duration;
-use std::error::Error;
+use std::{env, error::Error};
 
 pub const MY_ARGUMENT_PROCESS: bool = true;
 pub const ARGUMENTS_PRINT: bool = true;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
-fn advection_input(arg_config: MyConfiguration, def_pathbufs: Vec<PathBuf>) -> MyResult<MyConfiguration>{
-    let matches = App::new("Advection")
+pub fn advection_input() -> MyResult<(Argumento, MyConfiguration)>{
+    let clap_arguments = App::new("Advection").color(ColorChoice::Always)
     .version("0.1")
     .author("Maxim <mmmaximus1403@gmail.com>")
     .about("Does awesome things")
-    .arg(Arg::with_name("SWITCH_TIME")
+    .arg(Arg::new("SWITCH_TIME")
         .short('s')
         .default_value("false")
         .long("switch_time")
         .help("Sets option for taking real-time or dt on every iteration in main.rs"))
-    .arg(Arg::with_name("debug")
+    .arg(Arg::new("debug")
         .short('d')
-        .multiple(true)
+        .min_values(1)
         .help("Sets the level of debugging information"))
-    .arg(Arg::with_name("amount-of-files")
-        .short('q')
-        .takes_value(true)
-        .default_value("6")
-        .help("Sets how many files will be processed[default MAXIMUM_FILES_TO_EXPECT=6]"))
-    .arg(Arg::with_name("CORRECTION")
+    .arg(Arg::new("CORRECTION")
         .short('c')
         .long("correction")
+        .required(false)
         .help("Sets the input file to use"))
-    .arg_group(ArgGroup::with_name("output-style")
-            .add_all(vec!["output", "in-file"])
-            .required(true))
-    .arg(Arg::with_name("Path_to_files")
+    .arg(Arg::new("amount-of-files")
+        .short('q')
+        .long("fquantity")
+        .takes_value(true)
+        //.map(parse_positive_int)
+        //.map_err(|e| format!("illegal amount of files number -- {}", e))?
+        .default_value("6")
+        .help("Sets how many files will be processed[default MAXIMUM_FILES_TO_EXPECT=6]"))
+    .group(ArgGroup::with_name("output-style")
+            .args(&["cli-files", "in-file", "from-directory"])
+            .required(true))//Only one of them!
+    .arg(Arg::new("path-to-files")
         .short('f')
         .long("file-paths")
-        .multiple(true)
-        //.conflicts_with("lines")
-        .help("Gives your own path to main")
-        .takes_value(true))
+        .multiple_occurrences(true)
+        .conflicts_with("in-file")
+        .help("Gives your own path to main programm")
+        .takes_value(true)
+        .required(false)
+        .requires("cli-files"))
+    .arg(Arg::new("dir-to-files")
+        .long("dir-path")        
+        .takes_value(true)
+        .required(false))
         .get_matches();
-    let switch_time = matches.value_of("switch_time").unwrap_or("default.conf");
+    assert!(clap_arguments.is_present("output-style"));
+    //Check what style I/someone had chosen
+    let mut outcli = false;
+    let mut from_files = false;
+    let mut from_directory = false;
+    let (stdoutput, to_file, out_get_dir) = (
+        clap_arguments.is_present("cli-files"),
+        clap_arguments.is_present("in-file"),
+        clap_arguments.is_present("from-directory"),
+    );
+    match (stdoutput, to_file, out_get_dir) {
+        (true, _, _) => outcli = true,
+        (_, true, _) => from_files = true,
+        (_, _, true) => from_directory = true,
+        _ => unreachable!(),
+    };
+    let switch_time = clap_arguments.value_of("SWITCH_TIME").unwrap_or("false");
+    let debug = clap_arguments.value_of("debug").unwrap_or("false");
+    let correction = clap_arguments.value_of("CORRECTION").unwrap_or("false");
+    let amf = clap_arguments.value_of("amount-of-files").unwrap();
+    let out_style = clap_arguments.value_of("output-style").unwrap();
     if ARGUMENTS_PRINT{
-        println!("Value for SWITCH_TIME: {}", switch_time);}
+        format!("stdout?{}-fileout?{}-from_directory?{}", outcli, from_files, from_directory);
+        println!("Value for SWITCH_TIME: {}", switch_time);
+    }
+    let mut files_str: Vec<String> = Vec::new();
+    let mut files_buf: Vec<PathBuf> = Vec::new();
+    if outcli {
+    files_str = clap_arguments.values_of("path-to-files").clone().unwrap().map(|strs| String::from(strs)).collect::<Vec<String>>();
+    files_buf = files_str.clone().into_iter().map(|strin| Path::new(&strin[..]).to_path_buf()).collect();
+    println!("{}", "Files collected from terminal: ".italic().yellow());
+    for fi in &files_str{
+        println!("{}", fi);
+        }
+    }
+    let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
+    cyan!("{}", case_sensitive);
+//So the last and most: What I need to get?
+//query- switch case[default false], if there are ! files in terminal- return filled Argumento, else empty;
+//MyConfig will get all other stuff
+    //let clap_args: Vec<String> = vec![switch_time.to_string(), ];
+    let argumento = if outcli {//so argumento will get paths from cli
+        Argumento{query: "From command line".to_string(),
+            filenames: files_str, case_sensitive}
+        }
+        else {
+            Argumento{query: String::new(), filenames: (&[]).to_vec(), case_sensitive: false}
+        };
+    let my_config = if from_files || from_directory {
+        let new_patbuf_vec = Vec::<PathBuf>::new();
+        let directory_to_files = clap_arguments.value_of("dir-to-files").unwrap();
+        MyConfiguration {//this variable suitable for both[from language point]
+            search_path: Some(PathBuf::from(directory_to_files)),
+            searched_files: new_patbuf_vec,
+            debug: str_to_bool(debug),
+            amf: str_to_bool(amf),
+            correction: str_to_bool(correction),
+            out_style: str_to_bool(out_style),
+    }} else{MyConfiguration {//this variable suitable for both[from language point]
+        search_path: None,
+        searched_files: files_buf,
+        debug: str_to_bool(debug),
+        amf: str_to_bool(amf),
+        correction: str_to_bool(correction),
+        out_style: str_to_bool(out_style),}};
+    return Ok((argumento, my_config))
+}
+#[derive(Default, Debug, PartialEq)]
+pub struct MyConfiguration {
+    // Option defaults to None, directory in which search files.
+    search_path: Option<PathBuf>,
+    // Vecs default to empty vector, files from directory or clone from cli
+    searched_files: Vec<PathBuf>,
+    debug: bool, 
+    amf: bool, 
+    correction: bool, 
+    out_style: bool, 
+}
+
+impl MyConfiguration {
+
 }
 mod StrctOptImpl{
     use super::{StructOpt, PathBuf};
@@ -98,20 +190,8 @@ pub fn is_dir_hidden(entry: &DirEntry) -> bool {
          .map(|s| s.starts_with("."))
          .unwrap_or(false)
 }
-#[derive(Default, Debug, PartialEq)]
-struct MyConfiguration {
-    // Option defaults to None
-    output: Option<PathBuf>,
-    // Vecs default to empty vector
-    search_path: Vec<PathBuf>,
-    // Duration defaults to zero time
-    timeout: Duration,
-    // bool defaults to false
-    check: bool,
-}
-impl MyConfiguration {
+
     // add setters here
-}
 /*
 fn process_clfiles<'a>(_datas: FileParametres, new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: &bool) 
     -> StdtResult<FileParametres>
@@ -248,7 +328,7 @@ let (new_buf , mut processed_params)= create_output_dir(fi, num_files).expect("I
         data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
         data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = io_sgn);
         println!("{:?} ", err );
-        /*let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
+        let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
         add_arg: {dataadd}  {sep} 
         margin_domain: {data3:?} {sep} 
         time_eval_period_stage: {data4:?} {sep} 
@@ -259,7 +339,7 @@ let (new_buf , mut processed_params)= create_output_dir(fi, num_files).expect("I
         n_corant: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
         data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
         data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = io_sgn)).as_bytes());
-        println!("{:?} ", err );*/
+        println!("{:?} ", err );
         let all_datas: FileParametres;
         all_datas = FileParametres::new(new_init_data[0].to_string(), (x_min,x_max),
         (t1, t2), new_init_data[3].to_string(), new_init_data[4].to_string(), (i1, i2, i3, 0_f32),
