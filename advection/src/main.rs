@@ -15,8 +15,8 @@ pub use input_structure;
 use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_macros::macro_lrls::{pt}};
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
-use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, op_sys};
-use input_structure::{TaskType, TaskTypeCs, FileParametres, FileParametresBuilder, initial_information_of_advection, is_dir_hidden, advection_input};
+use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, op_sys, write_at_end, traverse_not_hidden_files};
+use input_structure::{TaskType, TaskTypeCs, FileParametres, FileParametresBuilder, initial_information_of_advection, advection_input};
 #[macro_use]
 extern crate colour;
 #[macro_use] 
@@ -32,12 +32,13 @@ extern crate walkdir;
 use walkdir::{DirEntry, WalkDir};
 use gtk::prelude::*;
 use gio::prelude::*;
-use gtk::{Application, ApplicationWindow, Box, Button, Label};
+use gtk::{Application, ApplicationWindow, Box as GTKBox, Button, Label};
 pub use ansi_term::{Colour::{Fixed, Black as AnsiBlack, Red as AnsiRed, Green as AnsiGreen, Yellow as AnsiYellow, Blue as AnsiBlue, Purple as AnsiPurple, 
     Cyan as AnsiCyan, Fixed as AnsiFixed}, Style as AnsiStyle};
 ///These imports from library as I already downloaded these crates)
-use std::{env, fs, io::{self, Write}};
-use time::Duration;
+use std::{env, fs::{self, OpenOptions}, io::{self, Write}};
+use time::{Duration};
+use time::macros::date;
 #[warn(unused_imports)]
 use rand::{distributions::{Distribution, Uniform}, prelude::*};
 //use std::rand::{task_rng, Rng};
@@ -56,6 +57,8 @@ pub const GET_FILES_FROM_DIRECTORY: bool = false;
 }
 mod modifications{
 pub const RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool = true;
+pub const TIME_OUTPUT: bool = true;
+pub const MY_TEX_PATH_FILE: bool = true;
 pub const MAXIMUM_FILES_TO_EXPECT: usize = 6;
 }
 
@@ -65,8 +68,10 @@ pub const MAXIMUM_FILES_TO_EXPECT: usize = 6;
 pub use determine_my_impls::*;
 pub use determine_calculation_modes::*;
 use modifications::*;
-type StdResult<T> = std::result::Result<T, String>;//Box<dyn Error>
-fn main()  {//-----------------------------------------
+
+use std::error::Error as SError;
+type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
+fn main() {//-----------------------------------------
     let application = Application::new(
         Some("com.github.rust-ui-rundown.rust-ui-gtk"),
         Default::default(),
@@ -77,7 +82,7 @@ fn main()  {//-----------------------------------------
         window.set_title("This is advection programm!");
         window.set_default_size(700, 200);
 
-        let container = Box::new(gtk::Orientation::Vertical, 10);
+        let container = GTKBox::new(gtk::Orientation::Vertical, 10);
 
         let label = Label::new(None);
         let button = Button::with_label("Click me!");
@@ -92,9 +97,30 @@ fn main()  {//-----------------------------------------
         initial_information_of_advection();
         window.show_all();
     });
-    application.run();
+    application.run();//-----------------------------------------
+    let app_get = date!(2021 - 01 - 31);
+    magenta!("App was done at {app_get:?}");
     let began_advection = Duration::ZERO;
-    //5.seconds().saturating_add(5.seconds() Duration::nanoseconds(
+    let std_duration = std::time::Duration::from_millis(0 as u64);
+    let start = std::time::Instant::now();
+    let from_cli = if MY_ARGUMENT_PARSING{
+        //process it by myself
+        advection_input()
+    }
+    else{
+        //with clap
+        //cargo run -- -output-style(maybe cli-args , etc) --file-paths input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions00.txt
+        advection_input()
+        //home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order/input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions0.txt
+    //55.seconds() 
+    };
+    let duration = start.elapsed();
+    let new_now  = std::time::Instant::now();
+    std_duration.saturating_add(duration);
+    if TIME_OUTPUT{
+        println!("App initialization: {:?} {duration:?}", new_now.duration_since(start));
+    }
+    let (mut argumento, mut my_config) = from_cli.unwrap();
     let mut time_counter = ChooseSleepTime::add_default_time();
 //-----------------------------------------
 //Here I am defining by default colored struct with task type
@@ -107,7 +133,7 @@ fn main()  {//-----------------------------------------
          ("!"),("!")
     );
 //General instruction about operating sys and environment variables
-    op_sys();
+    let comp_os = op_sys();
     let num_threads = num_cpus::get();
 //From this point I will determine file hierarchy on which output and input files will be.
 //----------------------------------------- 
@@ -156,6 +182,12 @@ fn main()  {//-----------------------------------------
         else {
             fs::create_dir_all(&output_path).unwrap();
         }
+        let example_data_path = &calculation_path.join("example_datas");
+        //Here will be stored calculations for every file example
+        std::fs::create_dir_all(&example_data_path).unwrap();
+        let mut x_v_w = OpenOptions::new()
+            .write(true).create(true).open(example_data_path.join("x_u_v.txt")).expect("cannot open file x_v_w");
+            x_v_w.write_all("x, u, w".as_bytes()).expect("write failed");
     }
     if RANDOM_PATH_CREATION {
         if directory_with_examples_exists{
@@ -172,37 +204,34 @@ fn main()  {//-----------------------------------------
 //(in that case supported Transfer task)
 //2 from txt files which *will be from input path getted *collected from command line *from file[their paths].
 // **Command line can be processed by hand-made parser into struct Argumento or with clap
+let file_paths_with_examples = my_config.get_files();
+let advection_modes = my_config.get_advection_modes();
+println!("{:?} - {advection_modes:?}", file_paths_with_examples);
     if GENERATE_RANDOM_EXAMPLE {    
         parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY);
+        //Ok((String::new()))
     }
-    else{
+    else if !advection_modes.2{//out_style
         //Get txt with datas
         if GET_FILES_FROM_DIRECTORY{
-            let mut all_txt: Vec<PathBuf> = Vec::new();
-            let walker = WalkDir::new(&input_fpath).into_iter();
-            for entry in walker.filter_entry(|e| !is_dir_hidden(e)) {
-                all_txt.push(PathBuf::from(entry.unwrap().path().clone()));
+            let txt_files = traverse_not_hidden_files(PATH_DEBUG_INFO, MAXIMUM_FILES_TO_EXPECT, &input_fpath);
+            let tex_file_path = advection_path.join("OutputFiles").join("RUSTadvection.tex");
+            let mut tex_file = OpenOptions::new()
+                .write(true).open(tex_file_path).expect("Writing to tex");
+            if MY_TEX_PATH_FILE{
+                write_at_end(&mut tex_file, my_config.get_files_len());
             }
-                    //First is directory itself
-            let all_txt = all_txt[1..MAXIMUM_FILES_TO_EXPECT+1usize].to_vec();
-            if PATH_DEBUG_INFO{ 
-                for path_txt in all_txt{
-                    println!("{}", path_txt.display());}
-                }
         }
         else{
-            if MY_ARGUMENT_PARSING{
-                //process it by myself
+            //Get from input path
+            let path_at_which_to_search_examples = my_config.get_directory_with_files();
+            let txt_files = traverse_not_hidden_files(PATH_DEBUG_INFO, MAXIMUM_FILES_TO_EXPECT, &path_at_which_to_search_examples);
             }
-            else{
-                //with clap
-                //cargo run -- -output-style -file-paths input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions00.txt
-                let from_cli= advection_input();
-                //home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order/input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions0.txt
-                //input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions0.txt input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions00.txt 
-            }
+            //Ok((String::new()))
         }
-    }
+
+
+        
 }
 
 
