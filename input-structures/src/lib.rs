@@ -258,7 +258,7 @@ pub struct DebOpt{
     pub amount_of_files: i32,
     }
 }
-type StdtResult<T> = std::result::Result<Vec<T>, Box<dyn Error>>;
+type StdtResult<T> = std::result::Result<(Vec<T>, Vec<String>), Box<dyn Error>>;
 pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: Option<bool>, should_sleep: Option<bool>, init_dir: Option<String>) 
 -> StdtResult<FileParametres>
 {
@@ -275,7 +275,7 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
     else{
         Arc::new(Mutex::new(Vec::new()))
     };
-    let mut created_paths: Vec<String> = Vec::new();
+    let mut created_paths: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let paths_hs: HashSet<String> = new_path_obj.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
     let number_of_dif_files = paths_hs.len();
     let mut paths_vec: Vec<String> = paths_hs.into_iter().collect();
@@ -301,6 +301,7 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         if additional_print { 
             println!("{:#?} - {}", new_init_data, file_i);}
         let files_vecs=  Arc::clone(&files_vec);
+        let create_paths=  Arc::clone(&created_paths);
 //For every preprocessed text ....
         new_init_data.into_par_iter().for_each(|new_init_data| {
         if additional_print {
@@ -313,6 +314,7 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         yellow!("{}th - {:?}", file_i, &p);
         let (fnum, new_buf, new_path_string, mut processed_params)= create_output_dir(file_i, num_files.unwrap_or(number_of_dif_files), 
                 should_sleep.unwrap_or(true), Some(&init_dir)).expect("In creating output files error ");
+        created_paths.lock().unwrap().push(new_path_string);
                 //created_data_directories.push(processed_params); 
         let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
             add_arg: {dataadd}  {sep} 
@@ -352,9 +354,10 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         println!("{:?}", repeated);
     return});
 let result = files_vec.lock().unwrap().to_vec().clone();
-drop(files_vec);
+let successfuly_created_paths = created_paths.lock().unwrap().to_vec().clone();
+
 println!("Processed: {:#?}", result);
-Ok(result)
+Ok((result, successfuly_created_paths))
 }
     //}
 //}
