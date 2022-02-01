@@ -10,7 +10,8 @@ extern crate colored;
 extern crate clap;
 use colored::Colorize;
 pub mod initial_data_utils;
-pub use crate::initial_data_utils::{PathBuf,Path, function_utils::cfutils::{self, Argumento, run, parse_pair, parse_three, op_sys, parse_positive_int, create_output_dir}};
+pub use crate::initial_data_utils::{PathBuf,Path, function_utils::{ cfutils::{self, Argumento, 
+    run, parse_pair, parse_three, op_sys, parse_positive_int, create_output_dir}}};
 pub use crate::initial_data_utils::initial_input_structures::{TaskType, TaskTypeCs,BurgerOrder, FileParametres, FileParametresBuilder, initial_information_of_advection};
 use crate::initial_data_utils::function_utils::print_macros::macro_lrls;
 use rustils::parse::boolean::str_to_bool;
@@ -31,6 +32,7 @@ use std::{io::Write, fs::read_to_string, env, error::Error};
 use std::time::Instant as SInstant;
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
+use log::info;
 
 pub const MY_ARGUMENT_PROCESS: bool = true;
 pub const ARGUMENTS_PRINT: bool = true;
@@ -411,9 +413,42 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
             println!("\nRb_comments: {:#?}  in {file_number} file", rubbish);}
         Ok(new_init_data)
     }
-
-    // add setters here
-
+pub fn main_initialization(steps: usize, debug_init: bool){
+    use std::time::Instant;
+    let init_t  = std::time::Instant::now();
+    println!("{}", Style::new().foreground(Blue).italic().paint("Constructing array \nfor saving values of function"));
+    let mut vprevious = vec![0_f64; steps as usize + 2 as usize];
+    if debug_init{
+        println!("Size {} steps {}\n", vprevious.len(), steps as f32);
+        assert!(vprevious.len() == steps+2);
+        let values_all_same = vprevious.iter()/*.inspect(|val| println!("Inspect on size now-{}",val))*/.all(|& x| x == vprevious[0]);
+        println!("All array's dtypes values the same?{}", values_all_same);
+    }
+    let mut inner_vector = vec![0_f32; steps as usize + 2 as usize]; // As next time step to vprevious
+    if debug_init {
+        println!("{}: {} # {} ", Style::new().foreground(Blue).italic().paint("Size of inner and previous arrays"), inner_vector.len(), vprevious.len());
+        info!("{}== {}?", inner_vector.len(), vprevious.len());
+        //They will be exchanging values in main loop.
+        std::thread::sleep(std::time::Duration::from_millis(300_u64));
+    }
+    let mut exact_solvec = vec![vec![0_f32; steps + 2], vec![0_f32;steps + 2], vec![0_f32;steps + 2]];//vec![vec![0_f32;steps + 2], vec![0_f32; steps + 2], vec![0_f32;steps + 2]];
+    if debug_init{let all_same_length = exact_solvec.iter().all(|ref v| v.len() == exact_solvec[0].len());
+        if all_same_length {
+            println!("They're all the same");
+        } else {
+            println!("They are not the same");
+        }
+    }
+    let elapsed_in = init_t.elapsed();
+    if debug_init{
+    println!("Elapsed for initialization: {:.2?}", elapsed_in);}
+    let new_now = std::time::Instant::now();
+    println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
+    info!("Start in determining initial shape");
+    let mut first_ex = exact_solvec[0].clone();
+    let mut second_ex = exact_solvec[1].clone();
+    let mut temporary = exact_solvec[2].clone();
+}
 
 #[cfg(test)]
 mod tests {
