@@ -10,10 +10,12 @@ extern crate colored;
 extern crate clap;
 use colored::Colorize;
 pub mod initial_data_utils;
-pub use crate::initial_data_utils::{PathBuf,Path, function_utils::cfutils::{self,run, parse_pair, parse_three, Argumento, op_sys, parse_positive_int}};
+pub use crate::initial_data_utils::{PathBuf,Path, function_utils::cfutils::{self, Argumento, run, parse_pair, parse_three, op_sys, parse_positive_int, create_output_dir}};
 pub use crate::initial_data_utils::initial_input_structures::{TaskType, TaskTypeCs,BurgerOrder, FileParametres, FileParametresBuilder, initial_information_of_advection};
 use crate::initial_data_utils::function_utils::print_macros::macro_lrls;
 use rustils::parse::boolean::str_to_bool;
+extern crate rayon;
+use rayon::prelude::*;
 //use std::time::{Instant};
 //use chrono::{Local};
 use tutil::crayon::Style;
@@ -25,13 +27,14 @@ use clap::{ ColorChoice, Arg, ArgGroup, App};
 use clap::{app_from_crate, arg, crate_name};
 use walkdir::{DirEntry};
 use std::time::Duration;
-use std::{env, error::Error};
+use std::{io::Write, fs::read_to_string, env, error::Error};
 use std::time::Instant as SInstant;
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 
 pub const MY_ARGUMENT_PROCESS: bool = true;
 pub const ARGUMENTS_PRINT: bool = true;
+pub const PROCESS_DETAIL: bool = true;
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
@@ -57,7 +60,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
         .help("Sets the input file to use"))
     .arg(Arg::new("transfer-velocity")
         .takes_value(true)
-        .default_value("10_f64")
+        .default_value("0_f64")
         .conflicts_with("burger")
         .long("transfer-velocity"))
     .arg(Arg::new("burger")
@@ -92,6 +95,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
         .short('f')
         .long("file-paths")
         .multiple_occurrences(true)
+        .min_values(1)
         .conflicts_with("in-file")
         .help("Gives your own path to main programm")
         .takes_value(true)
@@ -254,27 +258,156 @@ pub struct DebOpt{
     pub amount_of_files: i32,
     }
 }
-pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: Option<bool>) 
-//-> StdtResult<FileParametres>
+type StdtResult<T> = std::result::Result<Vec<T>, Box<dyn Error>>;
+pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: Option<bool>, should_sleep: Option<bool>, init_dir: Option<String>) 
+-> StdtResult<FileParametres>
 {
+    use std::fs::File;
+    let additional_print = if let Some(d) = db{
+        d
+    }
+    else{
+        true
+    };
     let files_vec: Arc<Mutex<Vec<FileParametres>>> = if let Some(num_files) = num_files {
         Arc::new(Mutex::new(Vec::with_capacity(num_files * 2_usize)))
     }
     else{
         Arc::new(Mutex::new(Vec::new()))
     };
-    let mut paths_buf: Vec<PathBuf>= Vec::<PathBuf>::new();
-    let paths_hs: HashSet<PathBuf> = paths_buf.clone().into_iter().collect();
-    let arc_new_paths=  Arc::new(Mutex::new(paths_hs));
-    let mut paths_in_option: Vec<Option<PathBuf>> = new_path_obj.clone().into_iter().map(|p| Some(p)).collect::<Vec<_>>();
-    for (fi, fp) in  paths_in_option.iter().enumerate(){
-    if let Some(path_to_example_file) = fp{
-        let mut file_i = 0_usize;
-        yellow!("{}th - {:?}", fi+1, path_to_example_file);
-        file_i+=1_usize;
+    let paths_hs: HashSet<String> = new_path_obj.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
+    let number_of_dif_files = paths_hs.len();
+    let mut paths_vec: Vec<String> = paths_hs.into_iter().collect();
+    let mut str_paths: Vec<&str> = paths_vec.iter().map(|s| s.as_ref()).collect();
+    let arc_new_paths=  Arc::new(Mutex::new(paths_vec.clone()));
+    let mut paths_in_option: Vec<Option<PathBuf>> = paths_vec.clone().into_iter().map(|p| Some(PathBuf::from(p))).collect::<Vec<_>>();
+    let mut created_data_directories: Vec<File> = Vec::new();
+//First of all create directories for data .csv/txt storage
+    /*paths_in_option.iter_mut().enumerate().for_each(|(fi, fp)| {
+        if let Some(path_to_example_file) = fp{
+            yellow!("{}th - {:?}", fi+1, path_to_example_file);
+            let (fnum, new_buf, new_path_string, processed_params)= create_output_dir(fi, num_files.unwrap_or(number_of_dif_files), 
+                should_sleep.unwrap_or(true), init_dir.clone()).expect("In creating output files error ");
+            created_data_directories.push(processed_params);  
         }
-    }
+    });*/
+    //let init_dir = init_dir.unwrap().map(|h| String::from(h.to_string_lossy()));
+//Next from string paths to input file data preprocess and write afterwards to previously created directories
+    paths_vec.into_par_iter().for_each(|p| {
+        let init_dir: &String = init_dir.as_ref().unwrap();
+        let mut file_i = 0_usize;
+        let new_init_data = preprocess_text_for_parallel(&p.to_string(), PROCESS_DETAIL, &mut file_i);
+        file_i+=1_usize;
+        if additional_print { 
+            println!("{:#?} - {}", new_init_data, file_i);}
+        let files_vecs=  Arc::clone(&files_vec);
+//For every preprocessed text ....
+        new_init_data.into_par_iter().for_each(|new_init_data| {
+        if additional_print {
+            println!("New updated vector\n{:#?}", &new_init_data);}
+        let (x_min, x_max) = parse_pair::<f64>(new_init_data[1].as_str(), ':').expect("Second argument margin_domain must be tuple of pair");
+        let (i1,i2,i3) = parse_three::<f64>(new_init_data[5].as_str(), ':').expect("Forth argument is init_conditions, must be three digits here");
+        let (t1, t2) = parse_pair::<f64>(new_init_data[2].as_str(), ':').expect("3d argument is time, also three digits");
+        if additional_print {
+            println!("Domain{:?}, Time{:?}, Initial conditions{:?}", (x_min,x_max), (t1,t2), (i1,i2,i3));}
+        yellow!("{}th - {:?}", file_i+1, &p);
+        let (fnum, new_buf, new_path_string, mut processed_params)= create_output_dir(file_i, num_files.unwrap_or(number_of_dif_files), 
+                should_sleep.unwrap_or(true), Some(&init_dir)).expect("In creating output files error ");
+                //created_data_directories.push(processed_params); 
+        let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
+            add_arg: {dataadd}  {sep} 
+            margin_domain: {data3:?} {sep} 
+            time_eval_period_stage: {data4:?} {sep} 
+            bound_type: {data5}  {sep}  
+            init_type: {data6}  {sep}  
+            init_conditions: {data7:?} {sep} 
+            quantity_split_nodes: {data8:?} {sep} 
+            n_corant: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
+            data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
+            data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = ',')).as_bytes());
+            if additional_print{
+                println!("{:?} ", err );}
+            let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
+                (t1, t2, false), new_init_data[3].parse::<i8>().unwrap(), new_init_data[4].parse::<i8>().unwrap(), (i1, i2, i3, 0_f64),
+                new_init_data[6].parse::<f64>().unwrap(), new_init_data[7].parse::<f64>().unwrap(),
+            //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
+                (TaskType::Transfer{a: new_init_data[8].trim().parse().unwrap_or(0_f64)}, 0_i8, false)).unwrap();
+        if additional_print{
+            println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
+        let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
+            (t1, t2, false), new_init_data[3].parse::<i8>().unwrap(), new_init_data[4].parse::<i8>().unwrap(), (i1, i2, i3, 0_f64),
+            new_init_data[6].parse::<f64>().unwrap(), new_init_data[7].parse::<f64>().unwrap(),
+            //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
+            (TaskType::Transfer{a: new_init_data[8].trim().parse().unwrap_or(0_f64)}, 0_i8, false)).unwrap();
+            if additional_print{
+                println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
+            //then push all in earlier created vector for storing processed files
+            files_vecs.lock().unwrap().push(all_datas.clone());
+            });
+//Processed data 
+        let message_from_thread="The child thread ID: ".to_string();
+        let len_dots= message_from_thread.len();
+        //println!("{m:?} {0:?}", &files_vec, m= message_from_thread);
+        let repeated: String= std::iter::repeat(".").take(len_dots).collect();
+        println!("{:?}", repeated);
+    return});
+let result = files_vec.lock().unwrap().to_vec().clone();
+drop(files_vec);
+println!("Processed: {:#?}", result);
+Ok(result)
 }
+    //}
+//}
+pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &'a mut usize)-> Result<Vec<std::string::String>, ()>{
+    use std::char;
+    println!("{:?}", file);
+        let file_content = read_to_string(&file)
+            .expect("While reading occured an error");
+        let crude_data: String = file_content.split("\n ").map(|x| str::to_string(x.trim())).collect();
+        println!("{:#?}- unprocessed file with lenght: {} in file {} processing\n", crude_data, crude_data.len(), file_number);//let mut sep_sgn = String::new();
+        let io_sgn = ',';//read_string("You can choose the separation sign in the processed file:"); //Какой выбрать знак разделения в обработанном файле
+        let rinsed_data: Vec<&str> = crude_data.split("\n").collect();
+        if deb{
+            red!("\nRinsed: {:#?} in {file_number} file", &rinsed_data);}
+        let mut new_init_data = Vec::with_capacity(25);
+        let mut rubbish = Vec::with_capacity(25);
+        for x in rinsed_data{
+            let mut y =  x.trim_matches(char::is_alphabetic)
+                .replace(","," ").replace("'","").replace(" ","");//.replace(" ",":");
+            let lovely_sgn = '💝';
+            let _lh: usize = '💝'.len_utf8();
+            let mut b = [0; 4];
+            lovely_sgn.encode_utf8(&mut b);
+            if y.contains(char::is_numeric) { 
+                if y.contains('💝') { 
+                    let r = y.find('💝');
+                    if let Some(rr)  = r {
+                        let (z, zz) = y.split_at_mut(rr);//.chars().next().unwrap()
+                        let new_z = z.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace("\"","").to_string();
+                        let mut new_zz: String = (&zz[..]).to_string();
+                        new_zz = new_zz.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").to_string();
+                        rubbish.push(new_zz.to_string());
+                        new_init_data.push(new_z.to_string());
+                }//>>>>>>>>>>>>>>>>>>>>>
+            }
+            else {
+                y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ").trim_matches(char::is_alphabetic).to_string();
+                new_init_data.push(y);
+            }
+        }
+        else if !y.contains(char::is_numeric) {
+            panic!("Expected that in files would be digits.");
+        }
+        else{
+            y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
+            new_init_data.push(y);
+            }
+        }
+        //*file_number+=1_usize;
+        if deb{
+            println!("\nRb_comments: {:#?}  in {file_number} file", rubbish);}
+        Ok(new_init_data)
+    }
 
     // add setters here
 
