@@ -1,31 +1,37 @@
 //Errors in dark red, cyan for info
 #![feature(trace_macros)]
-#[macro_use]
 pub use std::borrow::Cow;
 use crate::initial_data_utils::function_utils::print_macros::macro_lrls::{pt};
 extern crate os_type;
-
+use os_type::{ OSType};
+extern crate path_clean;
+use handle::Handle;
+use path_clean::PathClean;
 //use print_macros::*;
 use std::borrow::Borrow;
-use std::{io::{self, Write},{time::Duration}, fs, env};
+use std::{thread, io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write, Error}, path::{Path, PathBuf},{time::{Instant, Duration}}, fs::{self, File}, env};
 use named_tuple::named_tuple;
-use std::path::{Path, PathBuf};
+//use std::path::{Path, PathBuf};
 extern crate custom_error;
 use custom_error::custom_error;
 #[path="./custom_colours.rs"]
 pub mod custom_colours;
+use walkdir::{WalkDir, DirEntry};
 pub use custom_colours::*;
 /* Stylisation */
+#[warn(unused_imports)]
 pub use colour::*;
+#[warn(unused_imports)]
 pub use tcprint::*;
 pub use colorify::*;
 pub use simple_colors::{white, red, printlnc, Style as SimStyle,Color as SimColor};
 use std::fmt::{Debug, Formatter};
-use ansi_term::Colour::*;
-use tutil::crayon::{Style as CrStyle, Color::{Red, Blue}};
+#[warn(unused_imports)]
 use text_colorizer::*;
 use termion;
-
+use std::sync::{Arc, Mutex};
+use std::error::Error as SError;//**** 
+type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
 
 //use dao_ansi::color::kinds::{ForegroundColor, BackgroundColor, PrimaryColor};
 use better_term::{flush_styles, rainbowify};
@@ -43,7 +49,7 @@ pub const  ALL_TIMES: [u16; 5] = [SLEEP_PASS, SLEEP_LOW, SLEEP_NORMAL, SLEEP_HIG
 
 pub const  ARGUMENTO_DBGOUT: bool = true;
 
-pub fn op_sys(){
+pub fn op_sys() -> OSType {
     let os = os_type::current_platform();
     println!("Type: {:?}", os.os_type);
     println!("Version: {}", os.version);
@@ -63,6 +69,7 @@ pub fn op_sys(){
                 println!("Unknown Operating System");}
             }
         }
+        os.os_type
     }
 
 pub fn approx_equal (a: f64, b: f64, dp: u8) -> bool {
@@ -178,6 +185,64 @@ impl ChooseSleepTime<'static>{
     }*/
 }
 
+//Обработка аргументов командной строки ref &
+pub fn run<'a>(argumento: &'a Argumento)-> Result<(), Box<dyn SError>>
+//dyn «динамический» объект типаж 
+{
+    let mut contents;
+    //let args= & argumento;
+    //let quant_f = if argumento.filename.len() < 3 {argumento.filename.len()} else{3};
+     //(0..quant_f).map(|i| {
+        //let aa= &args;
+        for file in argumento.filenames.iter(){
+            println!("Next file will be: {}", file);
+            contents = fs::read_to_string(file)
+                    .expect("Something wrong");
+println!("With text content in {}:\n{}", file, &contents);}
+    //});
+    Ok(())
+}
+pub fn create_output_dir(mut fnum: usize, num_files: usize, should_sleep: bool, init_dir: Option<&String>) -> StdResult<(usize, PathBuf, String, File )> {
+    //Создаем файл с именованными полями
+    //let mut temp_directory = env::temp_dir();
+    //temp_directory.push("/src");
+    let init_dir = Some(PathBuf::from(init_dir.unwrap()));
+    let path = if let Some(dir) = init_dir{
+            dir}
+        else{env::current_dir().unwrap()};
+    println!("\n{} {}\n", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).fg(ansi_term::Colour::Yellow).paint("The current directory is "), path.display());
+    let new_path = path.join(format!(r"treated_datas_{}", fnum));
+    println!("{} {}\n", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).fg(ansi_term::Colour::Green).paint("new_path is "), new_path.display());
+    fs::create_dir_all(&new_path).unwrap();
+    let parameter_file = new_path.join(format!(r"parameters_nf{}.txt", fnum));
+    fnum +=1;
+    let processed_params =  fs::OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&parameter_file).unwrap_or_else(|error| {
+        if error.kind() == ErrorKind::NotFound {
+            File::create(&parameter_file).unwrap_or_else(|error| {
+                panic!("Problem creating the file: {:?}", error);
+            })
+        } else {
+            panic!("Problem opening the file: {:?}", error);
+        }
+    });
+    println!("This will be writen later ... \n{:?} ", processed_params );
+    if should_sleep{
+        thread::sleep(Duration::from_secs(1_u64));}
+    let bu = PathBuf::from("src\\unchecked.txt");
+    let next_pathbuf= if fnum < num_files {parameter_file} else {bu};
+    let next_str = next_pathbuf.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
+    Ok((fnum, next_pathbuf, next_str, processed_params))
+}
+    
+
+pub fn write_at_end<W: Write + Seek>(writer: &mut W, amount_of_files: usize) -> io::Result<()> {
+        writer.seek(SeekFrom::End(0))?;
+        for i in 0..(amount_of_files+1_usize) {
+            writer.write("\n{i}".as_bytes())?;
+        }
+        // all went well
+        Ok(())
+    }
 fn read_file_or_stdin() -> Result<(), Box<dyn std::error::Error>> {
     let arg = "-";
     // These must live longer than `readable`, and thus are declared first:
@@ -196,128 +261,166 @@ fn read_file_or_stdin() -> Result<(), Box<dyn std::error::Error>> {
     
     Ok(())
     }
-
-
-    #[derive(Debug, Clone)]
-    pub struct Argumento{
-        pub query : String,
-        pub filenames : Vec<String>,
-        pub case_sensitive: bool,
+type MyResult<T> = Result<T, Box<dyn std::error::Error>>;
+pub fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
+    match filename {
+        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
+        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
     }
+}    
+// --------------------------------------------------
+pub fn parse_positive_int(val: &str) -> MyResult<usize> {
+    match val.parse() {
+        Ok(n) if n > 0 => Ok(n),
+        _ => Err(From::from(val)),
+    }
+}
+
+pub fn traverse_not_hidden_files(PATH_DEBUG_INFO: bool, MAXIMUM_FILES_TO_EXPECT: usize, input_fpath: &PathBuf) -> Vec<PathBuf> {
+    let mut all_txt: Vec<PathBuf> = Vec::new();
+    let walker = WalkDir::new(&input_fpath).into_iter();
+    for entry in walker.filter_entry(|e| !is_dir_hidden(e)) {
+        all_txt.push(PathBuf::from(entry.unwrap().path().clone()));
+        }
+        //First is directory itself
+        let all_txt = all_txt[1..MAXIMUM_FILES_TO_EXPECT+1usize].to_vec();
+        if PATH_DEBUG_INFO{ 
+        for path_txt in &all_txt{
+            println!("{}", path_txt.display());}
+        }
+        all_txt
+}
+pub fn is_dir_hidden(entry: &DirEntry) -> bool {
+    entry.file_name()
+         .to_str()
+         .map(|s| s.starts_with("."))
+         .unwrap_or(false)
+}
+
+    // --------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct Argumento{
+    pub query: String,
+    pub filenames: Vec<String>,
+    pub case_sensitive: bool,
+}
     
-    impl Argumento {
-        pub fn new(args: &[String]) -> Result<Argumento, ArgumentParseFilesError>  {
-            //trace_macros!(true);
-            if args.len() < 3 {
-                return Err(ArgumentParseFilesError::AmountOfFiles{
-                    error_description: format!(
-                        "{}parsing args: not enough arguments:
-                        \nThis program expect name main.rs + other txts 
-                        \n\r containing info of initial values", termion::color::Bg(termion::color::Red)),
+impl Argumento {
+    pub fn new(args: &[String]) -> Result<Argumento, ArgumentParseFilesError>  {
+        if args.len() < 3 {//trace_macros!(true);
+            //I determine the lowest limit of txt args[at least one]
+            return Err(ArgumentParseFilesError::AmountOfFiles{
+                error_description: format!(
+                    "{}parsing args: not enough arguments:
+                    \nThis program expect name main.rs + other txts 
+                    \n\r containing info of initial values", termion::color::Bg(termion::color::Red)),
                     code: 1})
-                    }
+                }
+        //Skipping the first argument as it's program name [cargo run main.rs ...]
         let mut args_vec: Vec<String> = Vec::with_capacity(args[2..].len() as usize); 
         let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
+        cyan!("{}", case_sensitive);
         for argument in env::args().skip(2) { //skip name of programm 
             if argument == "--help" {
                 cyan!("You passed --help as one of the arguments!");
-            }
+            }//below(pt/ptc is only convenient print)
             else if argument.ends_with(".txt"){
                 args_vec.push(argument);
                     if ARGUMENTO_DBGOUT{// print name of file first time...
-                    pt!("Arguments as supposed determining files.txt", "impl", &args_vec, PrintStyle::Debug);}
+                    pt!("Arguments as supposed determining files.txt", "impl", &args_vec, PrintStyle::Debug);
                 }
-    /*Very important!*/else if argument.starts_with("--") | argument.starts_with("-"){
+            }
+/*Very important!*/else if argument.starts_with("--") | argument.starts_with("-"){
                     continue
-                }
-                else{
-                    if ARGUMENTO_DBGOUT{
-                    pt!("Now support text files only", "debug");}
-                }
             }
-            cyan!("Vector of passed arguents");
-            if ARGUMENTO_DBGOUT{
-                pt!("Debug check for txt files", "dbg", &args_vec, PrintStyle::Debug);// below(pt/ptc is only convenient print)
+            else{
+                if ARGUMENTO_DBGOUT{
+                pt!("Now support text files only", "debug");}
             }
-            let query = args[1].clone();
-            println!("args[1]: {}", case_sensitive);
-            pt!(&query, "impl");
+        }
+        cyan!("Vector of passed arguents");
+        if ARGUMENTO_DBGOUT{
+            pt!("Debug check for txt files", "dbg", &args_vec, PrintStyle::Debug);
+        }
+        let query = args[1].clone();
+        println!("args[1]: {}", query);
+        pt!(&query, "impl");
         let mut vec_ap: Vec<String> = Vec::with_capacity(5*4);
-            for f in args_vec.into_iter(){
-                let filename = f.clone();
-                vec_ap.push(filename);
-        }
-        Ok(Argumento{query,
-            filenames: vec_ap,
-            case_sensitive})
-        }
+        for f in args_vec.into_iter(){
+            let filename = f.clone();
+            vec_ap.push(filename);
     }
+    Ok(Argumento{query,
+        filenames: vec_ap,
+        case_sensitive})
+    }
+}
 
-    fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String), ()>{
+pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String), ()>{
         use std::char;
             let file_content = fs::read_to_string(&file)
-                        .expect("While reading occured an error");
-                    let crude_data: String = file_content.split("\n ").map(|x| str::to_string(x.trim())).collect();
-                    println!("{:#?}- unprocessed file with lenght: {}\n", crude_data, crude_data.len());//let mut sep_sgn = String::new();
-                    let io_sgn = read_string("You can choose the separation sign in the processed file:"); //Какой выбрать знак разделения в обработанном файле
-                    match io_sgn.1 { //io::stdin().read_line(&mut io_sgn)
-                        n => {if n<5{
-                        println!("choose less than than 2 (or several more) separator(s)");
-                        println!("{} bytes read + 2 for \\n + size(seperator)", n-2);
-                            println!("{}", io_sgn.0);
-                        }
-                        else if n > 5 && n< 8{
-                        println!("You choose big sep- {}", io_sgn.0);
-                        }
-                        else{println!("To huge sepsign");}}
+                .expect("While reading occured an error");
+            let crude_data: String = file_content.split("\n ").map(|x| str::to_string(x.trim())).collect();
+            println!("{:#?}- unprocessed file with lenght: {}\n", crude_data, crude_data.len());//let mut sep_sgn = String::new();
+            let io_sgn = read_string("You can choose the separation sign in the processed file:"); //Какой выбрать знак разделения в обработанном файле
+            match io_sgn.1 { //io::stdin().read_line(&mut io_sgn)
+                n => {if n<5{
+                    println!("choose less than than 2 (or several more) separator(s)");
+                    println!("{} bytes read + 2 for \\n + size(seperator)", n-2);
+                        println!("{}", io_sgn.0);
+                    }
+                else if n > 5 && n< 8{
+                    println!("You choose big sep- {}", io_sgn.0);
+                    }
+                else{println!("To huge sepsign");}}
                 //Err(error) => println!("error: {}", error.0 as u8),     >>>>>>>>>>>>>>>>>>>>>
-                        }
-                let rinsed_data: Vec<&str> = crude_data.split("\n").collect();
-                println!("Rinsed: {:#?}", &rinsed_data);
-                let mut new_init_data = Vec::with_capacity(25);
-                let mut rubbish = Vec::with_capacity(25);
-                for x in rinsed_data{
-                    let mut y =  x.trim_matches(char::is_alphabetic)
-                        .replace(","," ").replace("\r"," ").replace("'","").replace(" ","");//.replace(" ",":");
-                    let lovely_sgn = '💝';
-                    let _lh: usize = '💝'.len_utf8();
-                    let mut b = [0; 4];
-                    lovely_sgn.encode_utf8(&mut b);
-                    if y.contains(char::is_numeric) {
-                    //let num: usize= "💝".chars().count();
-                        if y.contains('💝') {
-                            let r = y.find('💝');
-                        if let Some(rr)  = r {
-                            let (z, zz) = y.split_at_mut(rr);//.chars().next().unwrap()
-                            let new_z = z.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace("\"","");
-                            let mut new_zz: &str = &zz[..];// = &zz[rr .. ];
-                            new_zz = new_zz.trim_matches(char::is_alphabetic); 
-                            //if let Some(rr) =rr {
-                            //    z = (&z[rr as usize .. ]).to_string()}
-                            rubbish.push(new_zz.to_string());
-                            new_init_data.push(new_z.to_string());
-                        }
+            }
+            let rinsed_data: Vec<&str> = crude_data.split("\n").collect();
+            println!("Rinsed: {:#?}", &rinsed_data);
+            let mut new_init_data = Vec::with_capacity(25);
+            let mut rubbish = Vec::with_capacity(25);
+            for x in rinsed_data{
+            let mut y =  x.trim_matches(char::is_alphabetic)
+                .replace(","," ").replace("\r"," ").replace("'","").replace(" ","");//.replace(" ",":");
+            let lovely_sgn = '💝';
+            let _lh: usize = '💝'.len_utf8();
+            let mut b = [0; 4];
+            lovely_sgn.encode_utf8(&mut b);
+            if y.contains(char::is_numeric) {
+            //let num: usize= "💝".chars().count();
+                if y.contains('💝') {
+                    let r = y.find('💝');
+                    if let Some(rr)  = r {
+                        let (z, zz) = y.split_at_mut(rr);//.chars().next().unwrap()
+                        let new_z = z.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace("\"","");
+                        let mut new_zz: &str = &zz[..];// = &zz[rr .. ];
+                        new_zz = new_zz.trim_matches(char::is_alphabetic); 
+                        //if let Some(rr) =rr {
+                        //    z = (&z[rr as usize .. ]).to_string()}
+                        rubbish.push(new_zz.to_string());
+                        new_init_data.push(new_z.to_string());
                     }
-                        else {
-                            y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
-                            new_init_data.push(y);
-                        }
-                    }
-                    else if !y.contains(char::is_numeric) {
-                        panic!("Expected that in files would be digits.")
-                    }
+                }
+                else {
+                    y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
+                    new_init_data.push(y);
+                }
+            }
+            else if !y.contains(char::is_numeric) {
+                panic!("Expected that in files would be digits.")
+            }
                        //println!("{:#?}",&y);
-                    else{
-                        y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
-                        new_init_data.push(y);
-                        }
-                    }
-                    println!("Rb_comments: {:#?}", rubbish);
+            else{
+                y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
+                new_init_data.push(y);
+                }
+            }
+            println!("Rb_comments: {:#?}", rubbish);
                     //println!("{}",new_init_data.len());
                    /*let y = x.retain(|c| c !=',').as_str();
                     init[0].push_str(y);*/
-                Ok((new_init_data, io_sgn.0))
-        }
+        Ok((new_init_data, io_sgn.0))
+}
     fn read_string(comment:&str) -> (String, u8) {
         print!("{}", comment);
         io::stdout().flush().expect("flush");
@@ -327,10 +430,11 @@ fn read_file_or_stdin() -> Result<(), Box<dyn std::error::Error>> {
         println!("You had written {} bytes", iolen);
             return (String::from(string.trim()), iolen);
     }
+
 use std::str::FromStr;
 ///These functions search delimeters [first from book Jim Blandy and latter my improved version]
 //Ищем несколько разделителей
-fn parse_pair<T: FromStr>(s : &str, separator :char) -> Option<(T,T)>{
+pub fn parse_pair<T: FromStr>(s : &str, separator :char) -> Option<(T,T)>{
     match s.find(separator){
         None => None,
         Some(index) => {
@@ -340,7 +444,7 @@ fn parse_pair<T: FromStr>(s : &str, separator :char) -> Option<(T,T)>{
             }
     }
 }}
-fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
+pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
     let width = separator.len_utf8();
     match s.find(separator){
         None => None,
@@ -364,11 +468,67 @@ fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
         }
     }
 }
+//________________________Additional+++++++++++++++++++++++++++++++++++++
+pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    let path = path.as_ref();
+
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    }.clean();
+
+    Ok(absolute_path)
+}
+/*
+fn wf(_path: Option<&Path>) -> Result<(), Error> {
+    let current_dir = env::current_dir()?;
+    println!(
+        "Let's get access to current dir)\nEntries modified in the last 1 hour in {:?}:",
+        current_dir);
+    for entry in fs::read_dir(current_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        let metadata = fs::metadata(&path)?;
+        let last_modified = metadata.modified()?.elapsed().unwrap().as_secs();
+
+        if last_modified < 1 * 3600 && metadata.is_file() && path.ends_with(".rs") || path.ends_with("txt"){
+            println!(
+                "Last modified: {:?} seconds,
+                is read only: {:?},
+                size: {:?} bytes,
+                filename: {:?}",
+                last_modified,
+                metadata.permissions().readonly(),
+                metadata.len(),
+                path.file_name().ok_or("No filename").expect("File wf error"),
+            );
+        }
+    let path_to_read = Path::new("save_some_statistic.txt");
+    let stdout_handle = Handle::stdout()?;
+    let handle = Handle::from_path(path_to_read)?;
+
+    if stdout_handle == handle {
+        return Err(Error::new(
+            ErrorKind::Other,
+            "You are reading and writing to the same file",
+        ));//"You are reading and writing to the same file"
+    } else {
+        
+        let file = File::open(&path_to_read)?;
+        let file = BufReader::new(file);
+        for (num, line) in file.lines().enumerate() {
+            println!("{} : {}", num, line?.to_uppercase());
+        }
+    }
+    }    Ok(())
+}
 ///Some almost usefulness stuff 
 fn goodbye() -> String {
     "さようなら".to_string()
 }
-/*
+
 #[allow(missing_docs)]
 #[macro_export]
 #[warn(unused_macros)]
@@ -381,3 +541,4 @@ macro_rules! pt {
     };
 }
 */
+
