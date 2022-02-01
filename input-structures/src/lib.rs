@@ -275,6 +275,7 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
     else{
         Arc::new(Mutex::new(Vec::new()))
     };
+    let mut created_paths: Vec<String> = Vec::new();
     let paths_hs: HashSet<String> = new_path_obj.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
     let number_of_dif_files = paths_hs.len();
     let mut paths_vec: Vec<String> = paths_hs.into_iter().collect();
@@ -293,11 +294,10 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
     });*/
     //let init_dir = init_dir.unwrap().map(|h| String::from(h.to_string_lossy()));
 //Next from string paths to input file data preprocess and write afterwards to previously created directories
-    paths_vec.into_par_iter().for_each(|p| {
+    paths_vec.into_par_iter().zip((0..number_of_dif_files).into_iter()).for_each(|(p, fi)| {
         let init_dir: &String = init_dir.as_ref().unwrap();
-        let mut file_i = 0_usize;
+        let mut file_i = fi;
         let new_init_data = preprocess_text_for_parallel(&p.to_string(), PROCESS_DETAIL, &mut file_i);
-        file_i+=1_usize;
         if additional_print { 
             println!("{:#?} - {}", new_init_data, file_i);}
         let files_vecs=  Arc::clone(&files_vec);
@@ -310,7 +310,7 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         let (t1, t2) = parse_pair::<f64>(new_init_data[2].as_str(), ':').expect("3d argument is time, also three digits");
         if additional_print {
             println!("Domain{:?}, Time{:?}, Initial conditions{:?}", (x_min,x_max), (t1,t2), (i1,i2,i3));}
-        yellow!("{}th - {:?}", file_i+1, &p);
+        yellow!("{}th - {:?}", file_i, &p);
         let (fnum, new_buf, new_path_string, mut processed_params)= create_output_dir(file_i, num_files.unwrap_or(number_of_dif_files), 
                 should_sleep.unwrap_or(true), Some(&init_dir)).expect("In creating output files error ");
                 //created_data_directories.push(processed_params); 
@@ -383,15 +383,15 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
                     let r = y.find('💝');
                     if let Some(rr)  = r {
                         let (z, zz) = y.split_at_mut(rr);//.chars().next().unwrap()
-                        let new_z = z.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace("\"","").to_string();
+                        let new_z = z.trim_matches(char::is_alphabetic).replace("'", "").replace("\r", "").replace("\\", "").replace("\"","").to_string();
                         let mut new_zz: String = (&zz[..]).to_string();
-                        new_zz = new_zz.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").to_string();
+                        new_zz = new_zz.trim_matches(char::is_alphabetic).replace("'", "").replace("\r", "").replace("\\", "").to_string();
                         rubbish.push(new_zz.to_string());
                         new_init_data.push(new_z.to_string());
                 }//>>>>>>>>>>>>>>>>>>>>>
             }
             else {
-                y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ").trim_matches(char::is_alphabetic).to_string();
+                y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\r", "").replace("\\", "").replace(","," ").trim_matches(char::is_alphabetic).to_string();
                 new_init_data.push(y);
             }
         }
@@ -399,7 +399,7 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
             panic!("Expected that in files would be digits.");
         }
         else{
-            y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
+            y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\r", "").replace("\\", "").replace(","," ");
             new_init_data.push(y);
             }
         }
