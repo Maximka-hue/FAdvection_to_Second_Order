@@ -349,7 +349,7 @@ Courant number: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data
                 .bound_type(bound_type).init_type(init_type).init_conditions((i1, i2, Some(i3), Some(0_f64)))
                 .quantity_split_nodes(quantity_split_nodes).n_corant(n_corant).add_args((Some(TaskType::Transfer{a: vel}), Some(0_i8), Some(false)))
                 .build();
-        println!("\n{:?}", &possible_error);
+        println!("\n{:?}", possible_error.ok());
         if additional_print{
             println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
         let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
@@ -363,13 +363,13 @@ Courant number: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data
             files_vecs.lock().unwrap().push(all_datas.clone());
             });
 //Processed data 
-        let message_from_thread="The child thread ID: ".to_string();
-        let len_dots= message_from_thread.len();
-        //println!("{m:?} {0:?}", &files_vec, m= message_from_thread);
-        let repeated: String= std::iter::repeat(".").take(len_dots).collect();
-        println!("{:?}", repeated);
     return});
 let result = files_vec.lock().unwrap().to_vec().clone();
+let message_from_thread="The child thread ID: ".to_string();
+let len_dots= message_from_thread.len();
+//println!("{m:?} {0:?}", &files_vec, m= message_from_thread);
+let repeated: String= std::iter::repeat(".").take(len_dots).collect();
+println!("{:?}", repeated);
 let successfuly_created_paths = created_paths.lock().unwrap().to_vec().clone();
 
 println!("Processed: {:#?}", result);
