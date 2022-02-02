@@ -6,12 +6,11 @@ extern crate colorify;
 #[macro_use]
 extern crate colour;
 extern crate colored;
-#[macro_use]
 extern crate clap;
 use colored::Colorize;
 pub mod initial_data_utils;
 pub use crate::initial_data_utils::{PathBuf,Path, function_utils::{ cfutils::{self, Argumento, 
-    run, parse_pair, parse_three, op_sys, parse_positive_int, create_output_dir}}};
+    run, parse_pair, parse_three, op_sys, approx_equal, parse_positive_int, create_output_dir}}};
 pub use crate::initial_data_utils::initial_input_structures::{TaskType, TaskTypeCs,BurgerOrder, FileParametres, FileParametresBuilder, initial_information_of_advection};
 use crate::initial_data_utils::function_utils::print_macros::macro_lrls;
 use rustils::parse::boolean::str_to_bool;
@@ -103,7 +102,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
         .takes_value(true)
         .requires("cli-files")
     ).get_matches();
-    let mut task_type: TaskType = TaskType::Burger(BurgerOrder::Arbitrary, clap_arguments.value_of("burger").unwrap().to_string());;
+    let mut task_type: TaskType = TaskType::Burger(BurgerOrder::Arbitrary, clap_arguments.value_of("burger").unwrap().to_string());
         //.try_get_matches_from(vec!["advection", "--cli-files"]);
     if clap_arguments.is_present("transfer-velocity") {
         let vel = clap_arguments.value_of("transfer-velocity").unwrap().parse::<f64>().unwrap_or(0_f64);
@@ -349,7 +348,7 @@ Courant number: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data
                 .bound_type(bound_type).init_type(init_type).init_conditions((i1, i2, Some(i3), Some(0_f64)))
                 .quantity_split_nodes(quantity_split_nodes).n_corant(n_corant).add_args((Some(TaskType::Transfer{a: vel}), Some(0_i8), Some(false)))
                 .build();
-        println!("\n{:?}", possible_error.ok());
+        println!("\n{:?\n}", possible_error.ok());
         if additional_print{
             println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
         let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
@@ -429,9 +428,10 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
     }
 
 pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &str, data_serial_number: usize, 
-    equation: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, check_flag_for_end_of_domain: bool){
+    equation: i8, type_of_initial_cond: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, left: f64, right: f64, check_flag_for_partition: bool){
     use std::time::Instant;
     let init_t  = std::time::Instant::now();
+    let deb_init = true;
     println!("{}", Style::new().foreground(Blue).italic().paint("Constructing array \nfor saving values of function"));
     let mut vprevious = vec![0_f64; steps as usize + 2 as usize];
     if debug_init{
@@ -440,14 +440,14 @@ pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &st
         let values_all_same = vprevious.iter()/*.inspect(|val| println!("Inspect on size now-{}",val))*/.all(|& x| x == vprevious[0]);
         println!("All array's dtypes values the same?{}", values_all_same);
     }
-    let mut inner_vector = vec![0_f32; steps as usize + 2 as usize]; // As next time step to vprevious
+    let mut inner_vector = vec![0_f64; steps as usize + 2 as usize]; // As next time step to vprevious
     if debug_init {
         println!("{}: {} # {} ", Style::new().foreground(Blue).italic().paint("Size of inner and previous arrays"), inner_vector.len(), vprevious.len());
         info!("{}== {}?", inner_vector.len(), vprevious.len());
         //They will be exchanging values in main loop.
         std::thread::sleep(std::time::Duration::from_millis(300_u64));
     }
-    let mut exact_solvec = vec![vec![0_f32; steps + 2], vec![0_f32;steps + 2], vec![0_f32;steps + 2]];//vec![vec![0_f32;steps + 2], vec![0_f32; steps + 2], vec![0_f32;steps + 2]];
+    let mut exact_solvec = vec![vec![0_f64; steps + 2], vec![0_f64; steps + 2], vec![0_f64; steps + 2]];//vec![vec![0_f32;steps + 2], vec![0_f32; steps + 2], vec![0_f32;steps + 2]];
     if debug_init{let all_same_length = exact_solvec.iter().all(|ref v| v.len() == exact_solvec[0].len());
         if all_same_length {
             println!("They're all the same");
@@ -493,12 +493,111 @@ let example_data_path = Path::new(&calculation_path[..]).join("example_datas");
             .write(true).create(true).open(first_xuv_csv).expect("cannot open file x_v_w");
     x_v_w_csv_0.write_all("x, u, w\n".as_bytes()).expect("write failed"); 
 //Now let's create first forms from initial data
-//For this I do need: 1 type of equation 2 initial conditions 3 dx(fragmentation) 4velocity(if eq=1) 4 check_flag_for_end_of_domain
+//For this I do need: 1 type of equation 2 initial conditions 3 dx(fragmentation) 4velocity(if eq=1) 4 check_flag_for_partition
+if check_flag_for_partition{
+    assert!(approx_equal(left + steps as f64 * dx, right, 6));
+    if equation == 0 || equation == 1 {
+        assert!((centre - width /2.0) - left >= 0.0); assert!((centre + width / 2.0) - right <= 0.0);
+    println!("{}", ansi_term::Style::new().underline().paint("Левая|правая точка треугольник вне заданной области"));
+    }
+}
+let start_left = (left * 1000_0000.0).ceil()/*because it is needed to be inside domain*//1000_0000.0;
+let end_right = (right * 1000_0000.0).floor()/*because it is needed to be inside domain*//1000_0000.0;
 let smax: f64 = match equation{
     0 => {
-        0_f64
-    },
-    _ => panic!("Initial equation condition incorrect")}; 
+        //measurement in pace(n*dx), important on edge!
+        let dip_start = ((start_left / dx) + ((centre - (width / 2.0) as f64) / dx)) as usize;//need to coincide with one of nodes
+        let dip_end = ((end_right / dx) - (centre + (width / 2.0)  as f64)) as usize;
+        let dip = (width / dx) as usize;//For clarity
+        let node_end = dip_start + dip;
+        let start = ((centre - (width / 2.0) as f64) / dx) as usize;
+        let end = ((centre + (width / 2.0) as f64) / dx) as usize;
+        let mut x_next: usize;
+        match type_of_initial_cond {//First check where will be throughout steps...so it will be inside
+            0 => {     
+                println!(" {} {} {} steps:{} ---- start:{} end:{}", dip_start,  dip_end , node_end, steps, start, end);
+                //----------------Let's pace
+                for n in 0..dip+1 {
+                    x_next = start + n as usize;
+                    vprevious[x_next] = height.max(-height) as f64;
+                    first_ex[x_next] = height.max(-height) as f64;
+                    if dip<30 {
+                        if n % 1== 0 && deb_init {println!("Получившиеся значения с шагом {} равны {}\n", n  + start , vprevious[x_next]);}
+                        println!("Остальные == 0");
+                    }
+                    else if (n+1)%10 == 0 {
+                        println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[x_next]);
+                    }
+            //info!("Runge: Step: {} - Value: {} ", n, vprevious[n as usize+start]);
+                }   
+            },
+            1 => {println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса"));
+            for n in 0..dip/2+1 {//this is not odd dip
+                let mut x_next = start + n as usize;
+                vprevious[x_next] = (height as f64 *2.0) as f64 * (dx * n as f64) /width as f64;
+                first_ex[x_next] = vprevious[x_next].clone();
+                temporary[x_next] = 2_f64 * width/height;
+                info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[n + start]);
+                if n > 0 && deb_init {println!("n: {} previous layer: {}", n, vprevious[n + start]);}
+                if dip/2<30 {
+                    if n% dip/2 == 0 && deb_init {
+                        println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n as usize + start as usize]);
+                    }
+                println!("Остальные == 0");}
+            else if n+1%10 == 0{
+                    println!("Получившиеся значения с шагом {} равны {}\n", n + start , vprevious[n as usize + start as usize]);
+                    println!("Остальные == 0");}
+            }
+            for n in dip/2+1..dip+1{
+                let mut x_next = start + n;
+                vprevious[x_next] = height - (height *2.0) * (dx*(n-dip/2) as f64) / width;
+                first_ex[x_next] = vprevious[x_next].clone();
+                temporary[x_next] = -2_f64 * width/height;
+                info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[start+n]);
+                if dip/2 < 11{
+                    if n+1% dip/10 == 0 && deb_init {
+                        println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n + start ]);}
+                        println!("Остальные ==0");}
+                else if n+1%10 == 0{
+                    println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n +start]);}
+                }
+            },
+            2 =>  //Manage with some differences*
+            {pt!(format!("{}", ansi_term::Style::new().underline().paint("Гауссова волна под уравнение переноса")));
+            let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
+            let start: usize = 0;   //this is integer parameter:left/right boundary in programm
+
+            for n in  0..steps {
+                let x_next: f64 = start as f64 + n as f64 * dx;//this needed to be on "domain" scale
+                vprevious[n] = cnt * (-((x_next as f64 - centre).powi(2))/
+                    (2.0 * width.powi(2))).exp();//exp^self  
+                println!("This is copy from slice*: {}", first_ex[n]);
+                temporary[n] = - cnt * (-((x_next as f64 - centre).powi(2))/
+                    (2.0 * width.powi(6))).exp();
+                info!("Gauss: Step: {} - Value: {} ", n, vprevious[start + n ]);
+            }
+            first_ex = vprevious.clone();
+            let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
+            info!("Max value in array with gauss wave: {}", maxvalue);
+                println!("MAXIMUM VALUE: {}", maxvalue);
+            },
+            other => {println!("Options of initial conditions can be only 0...4! found {}", other)
+            },
+             // Anyway we return a velocity in TRANSFER: it's constant
+        };
+        veloc}
+    1=> {
+        let fsmax: f64 = match type_of_initial_cond{
+            0 => {println!("{}", ansi_term::Colour::Yellow.underline().paint("Ступенька под уравнение <Бюргеррса>"));
+                
+            0_f64},
+            _ => {panic!("Initial equation condition incorrect");
+            0_f64}
+        };
+            
+        fsmax}, 
+    _ => panic!("Initial equation condition incorrect") 
+    };
 }
 
 #[cfg(test)]
