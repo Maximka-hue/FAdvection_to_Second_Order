@@ -28,7 +28,7 @@ use clap::{ ColorChoice, Arg, ArgGroup, App};
 use clap::{app_from_crate, arg, crate_name};
 use walkdir::{DirEntry};
 use std::time::Duration;
-use std::{io::Write, fs::read_to_string, env, error::Error};
+use std::{io::Write, fs::{self, OpenOptions, read_to_string}, env, error::Error};
 use std::time::Instant as SInstant;
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
@@ -319,23 +319,37 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         created_paths.lock().unwrap().push(new_path_string);
                 //created_data_directories.push(processed_params); 
         let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
-            add_arg: {dataadd}  {sep} 
-            margin_domain: {data3:?} {sep} 
-            time_eval_period_stage: {data4:?} {sep} 
-            bound_type: {data5}  {sep}  
-            init_type: {data6}  {sep}  
-            init_conditions: {data7:?} {sep} 
-            quantity_split_nodes: {data8:?} {sep} 
-            n_corant: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
+Optional argument(velocity): {dataadd}  {sep} 
+Margin domain: {data3:?} {sep} 
+Time evaluation period: {data4:?} {sep} 
+Boundary type: {data5}  {sep}  
+Initial type: {data6}  {sep}  
+Initial conditions: {data7:?} {sep} 
+Quantity split nodes: {data8:?} {sep} 
+Courant number: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
             data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
             data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = ',')).as_bytes());
             if additional_print{
                 println!("{:?} ", err );}
-            let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
-                (t1, t2, false), new_init_data[3].parse::<i8>().unwrap(), new_init_data[4].parse::<i8>().unwrap(), (i1, i2, i3, 0_f64),
-                new_init_data[6].parse::<f64>().unwrap(), new_init_data[7].parse::<f64>().unwrap(),
+            let eq = new_init_data[0].parse::<i8>().unwrap();
+            let bound_type = new_init_data[3].parse::<i8>().unwrap();
+            let init_type =  new_init_data[4].parse::<i8>().unwrap();
+            let quantity_split_nodes = new_init_data[6].parse::<f64>().unwrap();
+            let n_corant = new_init_data[7].parse::<f64>().unwrap();
+            let vel = new_init_data[8].trim().parse().unwrap_or(0_f64);
+            //From my impl new
+            let all_datas =  FileParametres::new(eq, (x_min,x_max),
+                (t1, t2, false/*this can determine switch time option*/), bound_type, init_type, (i1, i2, i3, 0_f64),
+                quantity_split_nodes, n_corant,
             //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
-                (TaskType::Transfer{a: new_init_data[8].trim().parse().unwrap_or(0_f64)}, 0_i8, false)).unwrap();
+                (TaskType::Transfer{a: vel}, 0_i8, false)).unwrap();
+            //from default
+            let possible_error = FileParametresBuilder::default()
+                .eq_type(eq).margin_domain((x_min,x_max)).time_eval_period_stage((t1, t2, Some(false)/*this can determine switch time option*/))
+                .bound_type(bound_type).init_type(init_type).init_conditions((i1, i2, Some(i3), Some(0_f64)))
+                .quantity_split_nodes(quantity_split_nodes).n_corant(n_corant).add_args((Some(TaskType::Transfer{a: vel}), Some(0_i8), Some(false)))
+                .build();
+        println!("\n{:?}", &possible_error);
         if additional_print{
             println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
         let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
@@ -413,7 +427,9 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
             println!("\nRb_comments: {:#?}  in {file_number} file", rubbish);}
         Ok(new_init_data)
     }
-pub fn main_initialization(steps: usize, debug_init: bool){
+
+pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &str, data_serial_number: usize, 
+    equation: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, check_flag_for_end_of_domain: bool){
     use std::time::Instant;
     let init_t  = std::time::Instant::now();
     println!("{}", Style::new().foreground(Blue).italic().paint("Constructing array \nfor saving values of function"));
@@ -448,6 +464,41 @@ pub fn main_initialization(steps: usize, debug_init: bool){
     let mut first_ex = exact_solvec[0].clone();
     let mut second_ex = exact_solvec[1].clone();
     let mut temporary = exact_solvec[2].clone();
+    //Needed in 1 and 2 shapes
+    let mut all_steps= vprevious.len()-2;//eliminate in 0/1 shapes additional on bound type knots
+//----------Create a lot of txt with differential mistakes and x u(numerical sol.) and exact solution
+let calculation_path = calculation_path.to_string();
+println!("{}", calculation_path);
+let example_data_path = Path::new(&calculation_path[..]).join("example_datas");
+/*Here will be differential errors in main cycle for fi_th example*/let new_path_dif = example_data_path
+    .join(&format!("differ_errors_{}", data_serial_number)[..]);
+/*Here will be x_u_w storage in txt in main cycle for fi_th example*/let new_xuv_txt = example_data_path
+    .join(&format!("x_u_w_txt_{}", data_serial_number)[..]);
+/*Here will be x_u_w storage in csv in main cycle for fi_th example*/let new_xuv_csv = example_data_path
+    .join(&format!("x_u_w_csv_{}", data_serial_number)[..]);
+    fs::create_dir_all(&new_path_dif).unwrap(); 
+    fs::create_dir_all(&new_xuv_txt).unwrap();
+    fs::create_dir_all(&new_xuv_csv).unwrap();
+    let first_dif = new_path_dif.join("diferr_0.txt");
+    let first_xuv_txt = new_xuv_txt.join("x_u_w_0.txt");
+    let first_xuv_csv = new_xuv_csv.join("x_u_w_0.csv");
+//This will be used for determining initial shape: line, gauss wave, etc.
+    let mut diferr_0 = OpenOptions::new()
+        .write(true).create(true).open(first_dif).expect("cannot open file x_v_w");
+    diferr_0.write_all("t, norm1, norm2\nt,0,0\n".as_bytes()).expect("write failed"); 
+    let mut x_v_w_txt_0 = OpenOptions::new()
+            .write(true).create(true).open(first_xuv_txt).expect("cannot open file x_v_w");
+    x_v_w_txt_0.write_all("x, u, w\n".as_bytes()).expect("write failed"); 
+    let mut x_v_w_csv_0 = OpenOptions::new()
+            .write(true).create(true).open(first_xuv_csv).expect("cannot open file x_v_w");
+    x_v_w_csv_0.write_all("x, u, w\n".as_bytes()).expect("write failed"); 
+//Now let's create first forms from initial data
+//For this I do need: 1 type of equation 2 initial conditions 3 dx(fragmentation) 4velocity(if eq=1) 4 check_flag_for_end_of_domain
+let smax: f64 = match equation{
+    0 => {
+        0_f64
+    },
+    _ => panic!("Initial equation condition incorrect")}; 
 }
 
 #[cfg(test)]
