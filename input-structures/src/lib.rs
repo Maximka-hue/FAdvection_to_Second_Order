@@ -1,4 +1,5 @@
 //This lib will implement initial interaction in programm(command-line, basic functions, etc.)
+#![feature(total_cmp)]
 #[warn(unused_imports)]
 #[macro_use] 
 extern crate tcprint;
@@ -26,9 +27,8 @@ pub use structopt::StructOpt;
 use clap::{ ColorChoice, Arg, ArgGroup, App};
 use clap::{app_from_crate, arg, crate_name};
 use walkdir::{DirEntry};
-use std::time::Duration;
-use std::{io::Write, fs::{self, OpenOptions, read_to_string}, env, error::Error};
-use std::time::Instant as SInstant;
+use std::time::{Duration, Instant as SInstant};
+use std::{ thread, io::Write, fs::{self, File, OpenOptions, read_to_string}, env, error::Error};
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use log::info;
@@ -171,6 +171,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
             amf: amf,
             correction: correction,
             out_style: out_style_from_cli,
+            switch_time,
             task_type,
     }} else{MyConfiguration {//this variable suitable for both[from language point]
         search_path: None,
@@ -179,6 +180,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
         amf: amf,
         correction: correction,
         out_style: out_style_from_cli,
+        switch_time,
         task_type}};
     let elapsed = start.elapsed();
     println!("Millis: {} ms", elapsed.as_millis());
@@ -195,6 +197,7 @@ pub struct MyConfiguration {
     amf: usize, 
     correction: bool, 
     out_style: bool, 
+    switch_time: bool, 
     task_type: TaskType,
 }
 
@@ -225,8 +228,8 @@ impl MyConfiguration {
             0_usize
         }
     }
-    pub fn get_advection_modes(&self)-> (bool, bool, bool, usize, TaskType) {
-        (self.debug, self.correction, self.out_style , self.amf, self.task_type.clone())
+    pub fn get_advection_modes(&self)-> (bool, bool, bool, usize, bool, TaskType) {
+        (self.debug, self.correction, self.out_style , self.amf, self.switch_time, self.task_type.clone())
     }
 }
 
@@ -428,27 +431,29 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
     }
 
 pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &str, data_serial_number: usize, 
-    equation: i8, type_of_initial_cond: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, left: f64, right: f64, check_flag_for_partition: bool){
+    equation: i8, type_of_initial_cond: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, left: f64, right: f64, check_flag_for_partition: bool)
+    -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, File, File, File, f64){
     use std::time::Instant;
     let init_t  = std::time::Instant::now();
     let deb_init = true;
     println!("{}", Style::new().foreground(Blue).italic().paint("Constructing array \nfor saving values of function"));
-    let mut vprevious = vec![0_f64; steps as usize + 2 as usize];
-    if debug_init{
+    let mut vprevious = vec![0_f64; steps];
+    if debug_init {
         println!("Size {} steps {}\n", vprevious.len(), steps as f32);
-        assert!(vprevious.len() == steps+2);
+        assert!(vprevious.len() == steps);
         let values_all_same = vprevious.iter()/*.inspect(|val| println!("Inspect on size now-{}",val))*/.all(|& x| x == vprevious[0]);
         println!("All array's dtypes values the same?{}", values_all_same);
     }
-    let mut inner_vector = vec![0_f64; steps as usize + 2 as usize]; // As next time step to vprevious
+    let mut inner_vector = vec![0_f64; steps]; // As next time step to vprevious
     if debug_init {
         println!("{}: {} # {} ", Style::new().foreground(Blue).italic().paint("Size of inner and previous arrays"), inner_vector.len(), vprevious.len());
         info!("{}== {}?", inner_vector.len(), vprevious.len());
         //They will be exchanging values in main loop.
         std::thread::sleep(std::time::Duration::from_millis(300_u64));
     }
-    let mut exact_solvec = vec![vec![0_f64; steps + 2], vec![0_f64; steps + 2], vec![0_f64; steps + 2]];//vec![vec![0_f32;steps + 2], vec![0_f32; steps + 2], vec![0_f32;steps + 2]];
-    if debug_init{let all_same_length = exact_solvec.iter().all(|ref v| v.len() == exact_solvec[0].len());
+    let mut exact_solvec = vec![vec![0_f64; steps], vec![0_f64; steps], vec![0_f64; steps]];//vec![vec![0_f32;steps + 2], vec![0_f32; steps + 2], vec![0_f32;steps + 2]];
+    if debug_init{
+        let all_same_length = exact_solvec.iter().all(|ref v| v.len() == exact_solvec[0].len());
         if all_same_length {
             println!("They're all the same");
         } else {
@@ -457,15 +462,13 @@ pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &st
     }
     let elapsed_in = init_t.elapsed();
     if debug_init{
-    println!("Elapsed for initialization: {:.2?}", elapsed_in);}
-    let new_now = std::time::Instant::now();
-    println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
+    println!("Creating arrays took: {:.2?}", elapsed_in);}
     info!("Start in determining initial shape");
     let mut first_ex = exact_solvec[0].clone();
     let mut second_ex = exact_solvec[1].clone();
     let mut temporary = exact_solvec[2].clone();
     //Needed in 1 and 2 shapes
-    let mut all_steps= vprevious.len()-2;//eliminate in 0/1 shapes additional on bound type knots
+    let mut all_steps= vprevious.len()+2;//eliminate in 0/1 shapes additional on bound type knots
 //----------Create a lot of txt with differential mistakes and x u(numerical sol.) and exact solution
 let calculation_path = calculation_path.to_string();
 println!("{}", calculation_path);
@@ -485,7 +488,7 @@ let example_data_path = Path::new(&calculation_path[..]).join("example_datas");
 //This will be used for determining initial shape: line, gauss wave, etc.
     let mut diferr_0 = OpenOptions::new()
         .write(true).create(true).open(first_dif).expect("cannot open file x_v_w");
-    diferr_0.write_all("t, norm1, norm2\nt,0,0\n".as_bytes()).expect("write failed"); 
+    diferr_0.write_all("t, norm1, norm2\n0,0,0\n".as_bytes()).expect("write failed"); 
     let mut x_v_w_txt_0 = OpenOptions::new()
             .write(true).create(true).open(first_xuv_txt).expect("cannot open file x_v_w");
     x_v_w_txt_0.write_all("x, u, w\n".as_bytes()).expect("write failed"); 
@@ -494,11 +497,11 @@ let example_data_path = Path::new(&calculation_path[..]).join("example_datas");
     x_v_w_csv_0.write_all("x, u, w\n".as_bytes()).expect("write failed"); 
 //Now let's create first forms from initial data
 //For this I do need: 1 type of equation 2 initial conditions 3 dx(fragmentation) 4velocity(if eq=1) 4 check_flag_for_partition
-if check_flag_for_partition{
+if check_flag_for_partition {
     assert!(approx_equal(left + steps as f64 * dx, right, 6));
     if equation == 0 || equation == 1 {
-        assert!((centre - width /2.0) - left >= 0.0); assert!((centre + width / 2.0) - right <= 0.0);
-    println!("{}", ansi_term::Style::new().underline().paint("Левая|правая точка треугольник вне заданной области"));
+    assert!((centre - (width /2.0)) - left >= 0.0); assert!(right - (centre + (width /2.0)) >= 0.0);
+    println!("{}", ansi_term::Style::new().underline().paint("Левая|правая точка треугольник в заданной области"));
     }
 }
 let start_left = (left * 1000_0000.0).ceil()/*because it is needed to be inside domain*//1000_0000.0;
@@ -507,7 +510,7 @@ let smax: f64 = match equation{
     0 => {
         //measurement in pace(n*dx), important on edge!
         let dip_start = ((start_left / dx) + ((centre - (width / 2.0) as f64) / dx)) as usize;//need to coincide with one of nodes
-        let dip_end = ((end_right / dx) - (centre + (width / 2.0)  as f64)) as usize;
+        let dip_end = ((end_right / dx) - (centre + (width / 2.0) / dx)) as usize;
         let dip = (width / dx) as usize;//For clarity
         let node_end = dip_start + dip;
         let start = ((centre - (width / 2.0) as f64) / dx) as usize;
@@ -515,58 +518,62 @@ let smax: f64 = match equation{
         let mut x_next: usize;
         match type_of_initial_cond {//First check where will be throughout steps...so it will be inside
             0 => {     
-                println!(" {} {} {} steps:{} ---- start:{} end:{}", dip_start,  dip_end , node_end, steps, start, end);
+                if deb_init {
+                    println!(" {} {} {} steps: {} ---- start: {} end: {}", dip_start,  dip_end , node_end, steps, start, end);}
                 //----------------Let's pace
                 for n in 0..dip+1 {
                     x_next = start + n as usize;
                     vprevious[x_next] = height.max(-height) as f64;
                     first_ex[x_next] = height.max(-height) as f64;
                     if dip<30 {
-                        if n % 1== 0 && deb_init {println!("Получившиеся значения с шагом {} равны {}\n", n  + start , vprevious[x_next]);}
-                        println!("Остальные == 0");
+                        if n % 1== 0 && deb_init {
+                            println!("Получившиеся значения с шагом {} равны {}\n", n  + start , vprevious[x_next]);}
                     }
                     else if (n+1)%10 == 0 {
                         println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[x_next]);
                     }
-            //info!("Runge: Step: {} - Value: {} ", n, vprevious[n as usize+start]);
-                }   
+                    info!("Runge: Step: {} - Value: {} ", n, vprevious[n + start]);
+                }
+                println!("Остальные == 0");   
             },
-            1 => {println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса"));
-            for n in 0..dip/2+1 {//this is not odd dip
-                let mut x_next = start + n as usize;
-                vprevious[x_next] = (height as f64 *2.0) as f64 * (dx * n as f64) /width as f64;
-                first_ex[x_next] = vprevious[x_next].clone();
-                temporary[x_next] = 2_f64 * width/height;
-                info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[n + start]);
-                if n > 0 && deb_init {println!("n: {} previous layer: {}", n, vprevious[n + start]);}
-                if dip/2<30 {
-                    if n% dip/2 == 0 && deb_init {
-                        println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n as usize + start as usize]);
+            1 => {
+                println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса"));
+                for n in 0..dip/2+1 {//this is not odd dip
+                    let mut x_next = start + n as usize;
+                    vprevious[x_next] = (height as f64 *2.0) as f64 * (dx * n as f64) /width as f64;
+                    first_ex[x_next] = vprevious[x_next].clone();
+                    temporary[x_next] = 2_f64 * width/height;
+                    info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[n + start]);
+                    if n > 0 && deb_init {println!("n: {} previous layer: {}", n, vprevious[n + start]);}
+                    if dip/2 < 30 {
+                        if n% dip/2 == 0 && deb_init {
+                            println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n as usize + start as usize]);
+                        }
                     }
-                println!("Остальные == 0");}
-            else if n+1%10 == 0{
-                    println!("Получившиеся значения с шагом {} равны {}\n", n + start , vprevious[n as usize + start as usize]);
-                    println!("Остальные == 0");}
+                    else if n+1%10 == 0{
+                        println!("Получившиеся значения с шагом {} равны {}\n", n + start , vprevious[n as usize + start as usize]);
+                    }
+                    println!("Остальные слева == 0");
             }
-            for n in dip/2+1..dip+1{
-                let mut x_next = start + n;
-                vprevious[x_next] = height - (height *2.0) * (dx*(n-dip/2) as f64) / width;
-                first_ex[x_next] = vprevious[x_next].clone();
-                temporary[x_next] = -2_f64 * width/height;
-                info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[start+n]);
-                if dip/2 < 11{
-                    if n+1% dip/10 == 0 && deb_init {
-                        println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n + start ]);}
-                        println!("Остальные ==0");}
-                else if n+1%10 == 0{
+                for n in dip/2+1..dip+1 {
+                    let mut x_next = start + n;
+                    vprevious[x_next] = height - (height *2.0) * (dx*(n-dip/2) as f64) / width;
+                    first_ex[x_next] = vprevious[x_next].clone();
+                    temporary[x_next] = -2_f64 * width/height;
+                    info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[start+n]);
+                    if dip/2 < 11{
+                        if n+1% dip/10 == 0 && deb_init {
+                            println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n + start]);}
+                            println!("Остальные ==0");}
+                        else if n+1%10 == 0{
                     println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[n +start]);}
                 }
+                println!("Остальные справа == 0");
             },
             2 =>  //Manage with some differences*
             {pt!(format!("{}", ansi_term::Style::new().underline().paint("Гауссова волна под уравнение переноса")));
             let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
             let start: usize = 0;   //this is integer parameter:left/right boundary in programm
-
             for n in  0..steps {
                 let x_next: f64 = start as f64 + n as f64 * dx;//this needed to be on "domain" scale
                 vprevious[n] = cnt * (-((x_next as f64 - centre).powi(2))/
@@ -587,17 +594,130 @@ let smax: f64 = match equation{
         };
         veloc}
     1=> {
-        let fsmax: f64 = match type_of_initial_cond{
-            0 => {println!("{}", ansi_term::Colour::Yellow.underline().paint("Ступенька под уравнение <Бюргеррса>"));
-                
-            0_f64},
+        let start = ((centre - (width / 2.0) as f64) / dx) as usize;
+        let end = ((centre + (width / 2.0) as f64) / dx) as usize;
+        let dip = (width / dx) as usize;//For clarity
+        let mut x_next: usize;
+        let fsmax: f64 = match type_of_initial_cond {
+            0 => {
+                println!("{}", ansi_term::Colour::Yellow.underline().paint("Ступенька под уравнение <Бюргеррса>"));
+                for n in 0..dip+1 {
+                    let mut x_next = start + n;
+                    vprevious[x_next] = height.max(-height);
+                    first_ex[x_next] = height.max(-height);
+                if dip<30{
+                    if n%2== 0 && deb_init {println!("Получившиеся значения с шагом {} равны {}\n", n  + start , vprevious[x_next]);
+                }
+                    println!("Остальные == 0");
+                }
+            else if (n+1)%10 == 0 {
+                println!("Получившиеся значения с шагом {} равны {}\n", n + start, vprevious[x_next]);
+                    }
+            info!("Runge: Step: {} - Value: {} ", n, vprevious[n + start]);
+                }
+                height},
+            1 => {
+                println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса"));
+                for n in 0..dip/2 + 1_usize{//this is not odd dip
+                    x_next = start + n;
+                    vprevious[x_next] = (height  *2_f64) * (dx * n as f64) /width;
+                    first_ex[x_next] = vprevious[x_next].clone();
+                    temporary[x_next] = 2_f64 * width/height;
+                    info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[(start+n) as usize]);
+                    if n > 0 && deb_init {
+                        println!("n: {} previous layer: {}", start+ n, vprevious[(start+n) as usize]);}
+                if dip/2<30 {
+                        if n% dip/2 == 0 && deb_init {
+                            println!("Получившиеся значения с шагом {} равны {}\n",n + start , vprevious[n + start]);}
+                            println!("Остальные == 0");
+                        }
+                else if n+1%10 == 0{
+                        println!("Получившиеся значения с шагом {} равны {}\n", n  + start , vprevious[n + start]);
+                        println!("Остальные == 0");
+                    }
+            }
+            for n in dip/2+1..dip + 1_usize{
+                x_next = start + n as usize;
+                vprevious[x_next] = height  - (height *2.0)  * (dx*(n -dip/2) as f64) /width as f64;
+                first_ex[x_next] = vprevious[x_next].clone();
+                temporary[x_next] = -2_f64 * width/height;
+                info!("Triangle: Step: {} - Value: {} ", start+ n, vprevious[(start+n) as usize]);
+                if dip/2 < 11{
+                    if n+1% dip/10 == 0 && deb_init {
+                        println!("Получившиеся значения с шагом {} равны {}\n", n as f32 + start as f32, vprevious[n as usize + start as usize]);}
+                        println!("Остальные ==0");}
+                else if n+1%10 == 0{
+                    println!("Получившиеся значения с шагом {} равны {}\n",n as f32 + start as f32, vprevious[n as usize+start as usize]);
+                }
+            }
+            thread::sleep(Duration::from_millis(50_u64));
+                    let max_value = *vprevious.iter().max_by(|a, b| a.total_cmp(b)).expect("Problem with Burger in type one"); 
+                    max_value},
+            2 =>  //Manage with some differences*
+            {
+                for n in  0..steps {
+                    x_next = n;
+                    let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
+                    //x_next = start + n as f64 * dx;//this neede to be on "domain" scale
+                    vprevious[n] = cnt * (-((x_next as f64 - centre).powi(2))/
+                        (2.0 * width.powi(2))).exp();//exp^self  
+                    println!("This is copy from slice*: {}", first_ex[n as usize]);
+                    temporary[n as usize] = -cnt * (-((x_next as f64  - centre).powi(2))/
+                        (2.0 * width.powi(6))).exp();
+                    info!("Gauss: Step: {} - Value: {} ", n, vprevious[(start + n) as usize]);
+                }
+                first_ex = vprevious.clone();
+                let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
+                info!("Max value in array with gauss wave: {}", maxvalue);
+                    println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
+                                    maxvalue
+            },
             _ => {panic!("Initial equation condition incorrect");
-            0_f64}
+            }
         };
-            
         fsmax}, 
     _ => panic!("Initial equation condition incorrect") 
     };
+    let new_now = std::time::Instant::now();
+    println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
+(first_ex , second_ex , temporary, vprevious, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
+
+}
+pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
+    vprevious: &mut Vec<f64>, first_ex: &mut  Vec<f64>, second_ex: &mut Vec<f64>)// -> (Vec<f64>, Vec<f64>, Vec<f64>)
+    {
+    let mut l: f64;
+    let mut l_new: usize;
+    //let mut h = (all_steps as f64/ print_npy as f64).floor() as usize;
+    for k in 0 .. all_steps{
+        if equation ==0 {
+            l =  k as f64 - curtime_on_vel;
+            if deb_my { 
+                println!("l: {}, curtime_on_vel: {}", l, curtime_on_vel);
+            }
+            if l >= all_steps as f64 {
+                l_new = ((l % all_steps as f64).abs()) as usize;
+                second_ex[k] = first_ex[l_new].clone();
+                l = l_new as f64;
+            } 
+            else {
+                l_new = if l as usize >= 0 {l as usize} else { (all_steps as f64 + l) as usize};
+                second_ex[k] = first_ex[l_new].clone();
+            }
+        }
+        else if equation ==1 {
+            //This will work **Only** with lines initial forms
+            first_ex[k]= (alpha * k as f64 + c)/
+                    (alpha * curtime_on_vel + 1.0);
+            println!("Exact vector: {}", first_ex[k]);
+            //Is it needed to live after reaching boundary?
+        }
+    }   
+    if equation ==0 {
+        first_ex.copy_from_slice(&second_ex[..]);
+        println!("Exact: {:?}\n Numeric: {:?}", first_ex, vprevious);
+    }
+    //(vprevious, first_ex, second_ex)
 }
 
 #[cfg(test)]
