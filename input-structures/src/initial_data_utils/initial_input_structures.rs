@@ -122,22 +122,33 @@ impl FileParametresBuilder {
                 return Ok(())
             }
         }
-        else{
-            thread::sleep(time::Duration::from_millis(500_u64));
-            return Err(format!("Something wrong with time parameter"))
-        }
-        
         if let boundary = self.margin_domain.unwrap_or((0_f64, 0_f64)){
             //(time_period.0 - time_period.1).abs() < std::f32::MIN 
+            let mut left = boundary.0;
+            let mut right = boundary.1;
+            let qsn = self.quantity_split_nodes.unwrap_or(100_f64);
+            let domain_ends_difference = (left - right).abs();
+            let dx = domain_ends_difference / qsn;
             if approx_equal(boundary.0, boundary.1, 3) {
                 return Err(format!("Time boundary is too close for calculation: {} ~ {}", boundary.0, boundary.1 ))
             }
-            else{
-                return Ok(())
+            else if (left - right) < 0.0 {
+                self.margin_domain.unwrap().0 = right;
+                self.margin_domain.unwrap().1 = left;
+                pt!("Boundary ends was swapped!");
+            }
+            else if approx_equal(left + dx as f64 * qsn, right, 6){
+                pt!("With accuracy 10e-6 left + ... = right")
+            }
+            else if qsn == 3.0 || qsn ==4_f64{
+                panic!("Quantity of nodes too few!")
+            }
+            else if approx_equal(dx, 0.000001, 6) {
+                panic!("Fragmentation is too small!")
             }
         }
         else{
-
+            return Ok(())
         }/*
         {
             println!("Incorrect Domain input");
