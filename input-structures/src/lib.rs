@@ -681,8 +681,68 @@ let smax: f64 = match equation{
     let new_now = std::time::Instant::now();
     println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
 (first_ex , second_ex , temporary, vprevious, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
-
 }
+pub fn main_cycle(a_positive: bool, possgn_smax: bool, ) {
+//This case is 
+        for k in 0..all_steps-1{// from second to prelast
+            if smooth_correction && k!=0 {
+            fu_next = match &equation{
+                0=> fuu * vprevious[k+1],
+                1=> vprevious[k+1].powi(2)/2 as f32,
+                _ =>  0_f32};
+            fu_prev = match &equation {
+                0=> fuu * vprevious[k],
+                1=> vprevious[k].powi(2)/2 as f32,
+                _ =>  0_f32};
+            prediction[k] =  vprevious[k] - (dt/dx)*(fu_next - fu_prev); 
+            //*prediction = *prediction.wrapping_offset(step);
+            fp_next =  match &equation{
+                0=> fuu * prediction[k] as f32,
+                1=> prediction[k] * prediction[k]/2 as f32,
+                _ =>  0_f32};
+        //prediction = prediction.wrapping_offset(-2 * step);
+            fp_prev = match &equation{
+                0=> fuu * prediction[k-1] as f32 ,
+                1=> prediction[k-1] * prediction[k-1] /2 as f32,
+                _ =>  0_f32};
+            inner_vector[k] = 0.5 * vprevious[k] + prediction[k] - (dt/dx) * (fp_next - fp_prev);
+            }
+        else {
+            fu_next = match &equation{
+                0=> fuu * vprevious[k+1],
+                1=> vprevious[k+1] * vprevious[k+1]/2 as f32,
+                _ =>  0_f32};
+            fu_prev = match &equation{
+                0=> fuu * vprevious[k],
+                1=> vprevious[k] * vprevious[k]/2 as f32,
+                _ =>  0_f32};
+            inner_vector[k] = vprevious[k] - (dt/dx)*(fu_next - fu_prev);
+        }
+    if smooth_correction && type_of_correction_program {//type_of_correction_program true, then wil be used .rs file programm
+            println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
+            Style::new().foreground(Red).bold().paint("smooth_intensity"),
+            Style::new().foreground(Blue).italic().paint("will be smoothed out with rust function 'smoothZF_rs'."));
+            smoothZF_rs(&mut inner_vector, all_steps, smooth_intensity, &mut first_correction, &mut second_correction);
+    }
+    else if smooth_correction && all_steps>49_usize && all_steps <301_usize {//this will call native program on c
+            println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
+                Style::new().foreground(Red).bold().paint("smooth_intensity"),
+                Style::new().foreground(Blue).italic().paint("will be smoothed out with c function 'Smooth_Array_Zhmakin_Fursenko'."));
+            call_smooth(&mut inner_vector, all_steps, smooth_intensity,
+                &mut first_correction, &mut second_correction);
+        }
+    else if smooth_correction{
+            println!("Steps must be set to default maximum value(200)");
+            panic!("For correction needed another step value!")
+        }
+        if k % 5 as usize == 0 {
+            println!("Array on next layer {}, fu_next(u) {}\n", inner_vector[k], fu_next);
+            info!("{}", format!("{} element: with value {}", k, inner_vector[k]));
+            }
+        }
+    }
+}
+
 pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
     vprevious: &mut Vec<f64>, first_ex: &mut  Vec<f64>, second_ex: &mut Vec<f64>)// -> (Vec<f64>, Vec<f64>, Vec<f64>)
     {
