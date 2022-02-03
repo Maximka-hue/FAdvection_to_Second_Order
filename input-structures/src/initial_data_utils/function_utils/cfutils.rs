@@ -457,7 +457,7 @@ pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String
         println!("You had written {} bytes", iolen);
             return (String::from(string.trim()), iolen);
     }
-pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f32>, exactvec: &Vec<f32>, 
+pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactvec: &Vec<f64>, 
                 calculation_path: &PathBuf, nf: usize, desc: &str, time_form: Option<&str>, deb_my: bool){
     //Will be less than (print_npy - 1) * step_by_step
         let step_by_step = (all_steps  as f64 /print_npy as f64).floor() as usize;
