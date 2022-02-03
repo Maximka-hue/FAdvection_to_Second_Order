@@ -6,10 +6,12 @@ extern crate os_type;
 use os_type::{ OSType};
 extern crate path_clean;
 use handle::Handle;
+use log::info;
 use path_clean::PathClean;
 //use print_macros::*;
 use std::borrow::Borrow;
-use std::{thread, io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write, Error}, path::{Path, PathBuf},{time::{Instant, Duration}}, fs::{self, File}, env};
+use std::{thread, io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write, Error},
+    path::{Path, PathBuf},{time::{Instant, Duration}}, fs::{self, OpenOptions, File}, env};
 use named_tuple::named_tuple;
 //use std::path::{Path, PathBuf};
 extern crate custom_error;
@@ -158,6 +160,31 @@ impl ChooseSleepTime<'static>{
     pub fn add_default_time<'a>() -> ChooseSleepTime<'a>{
     //let StartSleep: ChooseSleepTime =
         ChooseSleepTime::new("", (Vec::<bool>::new(), Vec::new()), ALL_TIMES)
+    }
+    pub fn get_time(&self, get_t: u64) -> u16{
+        if get_t< 6{
+            match get_t{
+                0 => self.time()[0],
+                1 => self.time()[1],
+                _ => 0_u16,
+            }
+        }
+        else{
+            0_u16
+        }
+    }
+    pub fn add_duration(self, add_this: u64, calculated: Option<bool>){
+        if let Some(is_calculate) = calculated{
+            if is_calculate { 
+                std::thread::sleep(Duration::from_millis(add_this as u64));}
+        }
+        else{
+            match add_this{
+                0 =>  std::thread::sleep(Duration::from_millis(self.get_time(0_u64) as u64)),
+                1 => std::thread::sleep(Duration::from_millis(self.get_time(0_u64) as u64)),
+                _ => println!("Something wrong with sleeping")
+            }
+        }
     }
     /*
     pub fn add_duration(self, add_this: u32, calculated: Option<bool>){
@@ -430,6 +457,31 @@ pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String
         println!("You had written {} bytes", iolen);
             return (String::from(string.trim()), iolen);
     }
+pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f32>, exactvec: &Vec<f32>, 
+                calculation_path: &PathBuf, nf: usize, desc: &str, time_form: Option<&str>, deb_my: bool){
+    //Will be less than (print_npy - 1) * step_by_step
+        let step_by_step = (all_steps  as f64 /print_npy as f64).floor() as usize;
+        let mut next_vec_index = 0_usize;
+        println!("X, U, U_exact ");
+        let end = print_npy * step_by_step - 1_usize;
+            for k in 0..print_npy {
+                next_vec_index = k * step_by_step; 
+                if deb_my{
+                    println!("{}  , {:^.5}, {:^.5}", next_vec_index as f32, numvec[next_vec_index], exactvec[next_vec_index]);
+                }
+            }
+            info!("{}  , {:^.5}, {:^.5}", all_steps as f32, numvec[end], exactvec[end]);
+            let pic_path = &calculation_path.join(format!(r"pic_shapes_file_num{}_{}.txt", nf, time_form.unwrap_or("")));
+            let mut pic_file = OpenOptions::new()
+                .write(true).create(true).open(&pic_path).expect("cannot open file");
+            for k in 0..print_npy {
+                pic_file.write_all(format!("{} , {:^.5}, {:^.5}
+                    ",k as f64, numvec[k], exactvec[k]).as_bytes()).unwrap();
+            }
+            pic_file.write_all(format!("{} , {:^.5}, {:^.5} \n
+                ",end as f64 - 1_f64, numvec[end], exactvec[end]).as_bytes()).unwrap();
+            pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
+            }
 
 use std::str::FromStr;
 ///These functions search delimeters [first from book Jim Blandy and latter my improved version]
@@ -480,6 +532,7 @@ pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
 
     Ok(absolute_path)
 }
+
 /*
 fn wf(_path: Option<&Path>) -> Result<(), Error> {
     let current_dir = env::current_dir()?;
