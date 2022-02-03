@@ -15,8 +15,9 @@ pub use input_structure;
 use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_macros::macro_lrls::{pt}};
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
-use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, op_sys, write_at_end, traverse_not_hidden_files};
-use input_structure::{TaskType, TaskTypeCs, FileParametres, FileParametresBuilder, initial_information_of_advection, advection_input};
+use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape};
+use input_structure::{TaskType, TaskTypeCs, FileParametres, FileParametresBuilder, initial_information_of_advection, 
+    advection_input, process_files, main_initialization, do_exact_solutions};
 #[macro_use]
 extern crate colour;
 #[macro_use] 
@@ -32,12 +33,14 @@ extern crate walkdir;
 use walkdir::{DirEntry, WalkDir};
 use gtk::prelude::*;
 use gio::prelude::*;
+use rayon::{prelude::*};
 use gtk::{Application, ApplicationWindow, Box as GTKBox, Button, Label};
 pub use ansi_term::{Colour::{Fixed, Black as AnsiBlack, Red as AnsiRed, Green as AnsiGreen, Yellow as AnsiYellow, Blue as AnsiBlue, Purple as AnsiPurple, 
     Cyan as AnsiCyan, Fixed as AnsiFixed}, Style as AnsiStyle};
 ///These imports from library as I already downloaded these crates)
-use std::{env, fs::{self, OpenOptions}, io::{self, Write}};
+use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env, fs::{self, OpenOptions}, io::{self, Write}};
 use time::{Duration};
+use chrono::{Duration as CDuration};
 use time::macros::date;
 #[warn(unused_imports)]
 use rand::{distributions::{Distribution, Uniform}, prelude::*};
@@ -54,12 +57,16 @@ pub const LETS_DO_PAUSE: bool = true;
 pub const GENERATE_RANDOM_EXAMPLE: bool = false;
 pub const RANDOM_PATH_CREATION: bool = false;
 pub const GET_FILES_FROM_DIRECTORY: bool = false;
+pub const CHECK_ENDS_OF_DOMAIN: bool = true;
 }
 mod modifications{
 pub const RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool = true;
 pub const TIME_OUTPUT: bool = true;
 pub const MY_TEX_PATH_FILE: bool = true;
 pub const MAXIMUM_FILES_TO_EXPECT: usize = 6;
+pub const DIVIDE_ALL_STEPS_TO_PYTHON_PIC: usize = 11;
+pub const SIMPLE_STEP_TYPE: bool = true; //true - steps, false - all_steps
+pub const LANGUAGE_TO_USE_CORRECTION: bool = true;//this is to switch among smooth.c and smooth.rs programs
 }
 
 //Then will be blocks that only for me to understand rust!(Maybe you will do another initializations,....)
@@ -83,10 +90,8 @@ fn main() {//-----------------------------------------
         window.set_default_size(700, 200);
 
         let container = GTKBox::new(gtk::Orientation::Vertical, 10);
-
         let label = Label::new(None);
         let button = Button::with_label("Click me!");
-
         container.add(&label);
         container.add(&button);
         window.add(&container);
@@ -100,8 +105,8 @@ fn main() {//-----------------------------------------
     application.run();//-----------------------------------------
     let app_get = date!(2021 - 01 - 31);
     magenta!("App was done at {app_get:?}");
-    let began_advection = Duration::ZERO;
-    let std_duration = std::time::Duration::from_millis(0 as u64);
+    let began_advection = SDuration::ZERO;
+    let std_duration = SDuration::from_millis(0 as u64);
     let start = std::time::Instant::now();
     let from_cli = if MY_ARGUMENT_PARSING{
         //process it by myself
@@ -121,7 +126,6 @@ fn main() {//-----------------------------------------
         println!("App initialization: {:?} {duration:?}", new_now.duration_since(start));
     }
     let (mut argumento, mut my_config) = from_cli.unwrap();
-    let mut time_counter = ChooseSleepTime::add_default_time();
 //-----------------------------------------
 //Here I am defining by default colored struct with task type
     let mut burger_rng = rand::thread_rng();
@@ -185,9 +189,6 @@ fn main() {//-----------------------------------------
         let example_data_path = &calculation_path.join("example_datas");
         //Here will be stored calculations for every file example
         std::fs::create_dir_all(&example_data_path).unwrap();
-        let mut x_v_w = OpenOptions::new()
-            .write(true).create(true).open(example_data_path.join("x_u_v.txt")).expect("cannot open file x_v_w");
-            x_v_w.write_all("x, u, w".as_bytes()).expect("write failed");
     }
     if RANDOM_PATH_CREATION {
         if directory_with_examples_exists{
@@ -199,14 +200,14 @@ fn main() {//-----------------------------------------
         }
     }
 //Then I am initializing structure that would be passed as initial datas for program, but!
-    let mut dataf = FileParametres::first_initializing(1).expect("Something wrong in Initializing");//It is as default for program
+    let mut data_default = FileParametres::first_initializing(1).expect("Something wrong in Initializing");//It is as default for program
 //There are options: 1 generate from file[GENERATE_RANDOM_EXAMPLE= false or datas from file will be illigal]
 //(in that case supported Transfer task)
 //2 from txt files which *will be from input path getted *collected from command line *from file[their paths].
 // **Command line can be processed by hand-made parser into struct Argumento or with clap
-let file_paths_with_examples = my_config.get_files();
-let advection_modes = my_config.get_advection_modes();
-println!("{:?} - {advection_modes:?}", file_paths_with_examples);
+    let mut file_paths_with_examples = my_config.get_files();
+    let advection_modes = my_config.get_advection_modes();
+    println!("{:?} - {advection_modes:?}", file_paths_with_examples);
     if GENERATE_RANDOM_EXAMPLE {    
         parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY);
         //Ok((String::new()))
@@ -219,7 +220,7 @@ println!("{:?} - {advection_modes:?}", file_paths_with_examples);
             let mut tex_file = OpenOptions::new()
                 .write(true).open(tex_file_path).expect("Writing to tex");
             if MY_TEX_PATH_FILE{
-                write_at_end(&mut tex_file, my_config.get_files_len());
+                let is_success_tex = write_at_end(&mut tex_file, my_config.get_files_len());
             }
         }
         else{
@@ -229,9 +230,140 @@ println!("{:?} - {advection_modes:?}", file_paths_with_examples);
             }
             //Ok((String::new()))
         }
+//Now let's read datas and overwrite them more clearly
 
+let mut file_parameters_from_cli = (Vec::<FileParametres>::new(), Vec::<String>::new());
+let calculation_path_as_string = calculation_path.into_os_string().into_string().unwrap();
+let deb_my = advection_modes.2;
+if deb_my{
+    file_parameters_from_cli = process_files(&mut file_paths_with_examples, Some(advection_modes.3), 
+        Some(advection_modes.0), Some(LETS_DO_PAUSE), Some(calculation_path_as_string)).unwrap();
+}
 
-        
+let calculation_path_as_str = &animation_path.join("datas").into_os_string().into_string().unwrap()[..];
+let number_of_files_with_data = file_parameters_from_cli.1.len();
+let debug_add = advection_modes.2.clone();
+(file_parameters_from_cli.0, file_parameters_from_cli.1).into_par_iter().zip((0..number_of_files_with_data).into_iter()).for_each(|(data, fi)| {
+    let mut my_time_counter = ChooseSleepTime::add_default_time();
+    let concrete_digits_data = data.0;
+    let paths_to_processed_datas = data.1;
+    let calculation_data_path = PathBuf::from(calculation_path_as_str);
+    println!("{:?} {:?}", concrete_digits_data, paths_to_processed_datas);
+//-------------------------------------------------
+/*&String: file_ith_argument*/let fiarg = &concrete_digits_data; //This ith file from command line!
+/*type*/        let equation = fiarg.eq_type;
+/*nodes*/       let steps = fiarg.quantity_split_nodes as usize;
+/*domain*/      let domain = fiarg.margin_domain;
+                let domain_ends_difference = (domain.1 - domain.0).abs();
+/*step*/        let dx = domain_ends_difference/steps as f64;
+/*Courant*/     let co = fiarg.n_corant;
+/*Ic*/          let i_parameters = fiarg.init_conditions;
+/*It*/          let i_type = fiarg.init_type;
+/*Transfer_velocity*/let velocity_t = fiarg.add_args.0.clone();
+let time_decrease: f64 = 20.0;
+let switch_time = advection_modes.4;
+/*period of end and output*/let time_ev = fiarg.time_eval_period_stage;
+    //In any way in process_clfile I had written TRANSFER, so i can switch it there
+    //But more convienient as I suppose that if TRANSFER=0_f32, then switch)  
+    let veloc: f64 = match velocity_t.expect("Maybe velocity not specified"){
+        TaskType::Transfer{a} => {if debug_add{println!("Speed: {}", a);
+                if LETS_DO_PAUSE{
+                    my_time_counter.add_duration(1, None);}} 
+                a},
+        TaskType::Burger(a, b) => {println!("However, this is burger equation: {:?} {:?}", a, b); 0_f64},
+    };
+    println!("Velocity from input: {veloc}");
+    let a_positive: bool = veloc > 0.0; //add parameter to detect sheme later
+    info!("Sign of speed: {}\n", a_positive);
+    let (mut first_ex , mut second_ex , mut temporary, mut vprevious, mut diferr_0, mut x_v_w_txt_0, mut x_v_w_csv_0, smax) = 
+        main_initialization(steps, debug_add, calculation_path_as_str, fi.clone(), 
+            equation, i_type, dx, i_parameters.0, i_parameters.1, i_parameters.2.unwrap_or(0_f64), veloc, domain.0, domain.1, CHECK_ENDS_OF_DOMAIN);
+//________________________________Some precycle clarification_______________________//  
+    let ELEMENTS_PER_RAW_PYARRAY: usize = ((steps as f32).floor()) as usize;//This will output array with this or less amount of columns
+    let existing_time = temporary.iter().min_by(|a, b|
+        a.partial_cmp(&b).unwrap_or(Ordering::Less)).unwrap_or(&0_f64);
+    println!("Minimum in temporary error vector: {}", &existing_time); 
+    let t_max = -1_f64/existing_time;
+    if equation==1 {
+        println!("Existing minimum time of burger: {} and will live: {}",
+            existing_time, t_max);
+        info!("{}", format!("Existing minimum time of burger: {}", existing_time));
+        info!("{}", format!("And so the maximum live time will be: {}", t_max));//........................................
+    }
+    let possgn_smax = smax > 0_f64;// later to switch scheme equation
+    println!("Maximum velocity from first initial layer: {}", smax);
+    let fuu = match &equation{
+        0 => veloc,
+        1 => 0.0, //Further in main cycle will determine this
+        _ => 0.0
+    };
+    //To pass in method std::Duration as u64 digit I need to converge it
+    let max_time_output_precised = (((time_ev.0 * 1000_000_000_f64)).ceil() as u64)/1000_000_000_u64;
+    let time_output_precised = (((time_ev.1 * 1000_000_000_f64)).floor() as u64)/1000_000_000_u64;
+    let mut maxl_time  = SDuration::from_secs(max_time_output_precised);// below, to set precision up to 6 characters after commas 
+    let mut maxl_time_ns = maxl_time.as_nanos();
+/*Period of output*/let out_time = SDuration::from_secs(time_output_precised);//   
+    let out_time_nanos = out_time.as_nanos();
+/*step on y*/       let dt = match equation {
+            0 => if a_positive {co * dx/(smax)} else {co * dx/(-smax)},
+            1 => if possgn_smax {co * dx/(smax)} else {co * dx/(-smax)},
+            _ => panic!("Not type match")
+        };
+        //Amount of steps vertically = dt * #steps vertically which in turn determine by maxl_time 
+    let height = (time_ev.0 as f64 / dt as f64).ceil() as usize;
+    let width = if SIMPLE_STEP_TYPE {steps} else { steps + 2_usize};
+    let smooth_correction: bool = advection_modes.1;
+    let smooth_intensity = 0.1;
+    let left_domend = domain.0;
+    let right_domend = domain.1;
+    let alpha = i_parameters.1;
+    let c = i_parameters.2.unwrap_or(0.0);
+        let mut prediction = vec![0_f64; width];
+        let mut first_correction = vec![0_f64; width];
+        let mut second_correction = vec![0_f64; width];
+        let mut fu_next: f64 = 0.0;   
+        let mut fu_prev = 0.0;
+        let mut dtotal_loop = chrono::Duration::zero();
+        let mut dtotal_loop_nanos = dtotal_loop.num_nanoseconds().unwrap();
+        let mut y_index: usize = 0;
+        let mut x_index: usize = 0;
+        let mut only_one_check = Some(1_i8);
+        let mut period: usize = 0;
+        let mut output_periods: Vec<usize> = Vec::new();
+        let all_steps = if SIMPLE_STEP_TYPE {steps} else { steps + 2_usize};  
+
+let print_npy = DIVIDE_ALL_STEPS_TO_PYTHON_PIC;
+let dir_to_graphics: PathBuf = calculation_data_path.join("datas");
+show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, fi, "This is the time after initializing shape", Some("the_beggining_shape"), deb_my);
+#[allow(unused_assignments)]
+    if switch_time {
+        //Loops made on real-time 
+    }
+    else{
+        //Loops dtermined by dt
+        let mut processed_time= chrono::Duration::nanoseconds(0);
+        let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
+        let mut begin= Instant::now(); 
+        let mut curtime_on_vel = 0.0;            
+        let mut fp_next: f64;
+        let mut fp_prev: f64;
+        while approx_equal(current_time_on_dt - max_time_output_precised as f64, 0.0, 3){
+            if deb_my {
+                println!("{}",ansi_term::Colour::Yellow.underline().paint(format!("Rest time before loop: {}", time_ev.0 - current_time_on_dt)));
+                println!("all_steps: {}", all_steps);
+            }
+            curtime_on_vel = current_time_on_dt * fuu;
+            let mut x_next: f64;
+//++++++++++++++++++++++++++++++++++++++++++++++++++++
+            let i = do_exact_solutions(equation, all_steps, curtime_on_vel, alpha, c, deb_my,  &mut vprevious, &mut first_ex, &mut second_ex);
+//------------------------------------------------------------------------------
+if (!a_positive && equation==0)||(!possgn_smax && equation==1){//f<0
+    
+
+            }
+
+        }
+    });
 }
 
 
@@ -248,20 +380,6 @@ use log::{info, warn, LevelFilter};
 use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Root};
-use clap::{Arg, App, SubCommand};
-use std::fmt::{Debug, Display};//For boundary in struct's types
-use tutil::crayon::Style;
-use std::iter;
-use std::fs;
-use std::path::PathBuf;
-use tutil::crayon::Color::{Red, Blue};
-use ansi_term::{self};
-use ansi_term::Colour::Fixed;
-use std::{env, io};
-use once_cell::sync::OnceCell;
-use walkdir::WalkDir;
-use std::fs::OpenOptions;
-use std::{sync::Mutex, collections::HashMap};
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 
