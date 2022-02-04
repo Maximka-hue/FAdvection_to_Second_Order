@@ -466,7 +466,7 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
 
 pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &str, data_serial_number: usize, 
     equation: i8, type_of_initial_cond: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, left: f64, right: f64, check_flag_for_partition: bool)
-    -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, File, File, File, f64){
+    -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, File, File, File, f64){
     use std::time::Instant;
     let init_t  = std::time::Instant::now();
     let deb_init = true;
@@ -714,7 +714,7 @@ let smax: f64 = match equation{
     };
     let new_now = std::time::Instant::now();
     println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
-(first_ex , second_ex , temporary, vprevious, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
+(first_ex , second_ex , temporary, vprevious, inner_vector, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
 }
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, dt: f64, dx: f64, equation: i8, a_positive: bool, possgn_smax: bool,
@@ -778,7 +778,7 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
             1=> prediction[k-1] * prediction[k-1] /2.0,
             _ =>  0.0};
         inner_vector[k] = 0.5 * (vprevious[k] + prediction[k] - (dt/dx) * (fp_next - fp_prev));
-        if type_of_correction_program {//type_of_correction_program true, then wil be used .rs file programm
+        if type_of_correction_program {//type_of_correction_program true, then will be used .rs file programm
             monotization_rs(inner_vector, first_correction, second_correction,
                 all_steps, smooth_intensity);
         }
