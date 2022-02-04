@@ -14,7 +14,7 @@ pub(crate) fn smoothZF_rs(fs: &mut Vec<f64>, Nmax: usize, smooth_int: f64, fi:  
     ftd[0] = fs[0];
     ftd[Nmax -1] = fs[Nmax -1];
     for n in 0 .. (Nmax - 1){
-        fs[n] = Ftd[n+1] - Ftd[n];
+        fs[n] = ftd[n+1] - ftd[n];
     }
 //Main calculations ++++++++++++++++++++++++++++++++++++++++
     for n in 0..Nmax-1{
