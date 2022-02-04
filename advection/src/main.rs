@@ -67,6 +67,7 @@ pub const MAXIMUM_FILES_TO_EXPECT: usize = 6;
 pub const DIVIDE_ALL_STEPS_TO_PYTHON_PIC: usize = 11;
 pub const SIMPLE_STEP_TYPE: bool = true; //true - steps, false - all_steps
 pub const LANGUAGE_TO_USE_CORRECTION: bool = true;//this is to switch among smooth.c and smooth.rs programs
+pub const REDUCE_TIME_TO_INT: bool = true;
 }
 
 //Then will be blocks that only for me to understand rust!(Maybe you will do another initializations,....)
@@ -297,14 +298,23 @@ let switch_time = advection_modes.4;
         1 => 0.0, //Further in main cycle will determine this
         _ => 0.0
     };
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     //To pass in method std::Duration as u64 digit I need to converge it
-    let max_time_output_precised = (((time_ev.0 * 1000_000_000_f64)).ceil() as u64)/1000_000_000_u64;
-    let time_output_precised = (((time_ev.1 * 1000_000_000_f64)).floor() as u64)/1000_000_000_u64;
-    let mut maxl_time  = SDuration::from_secs(max_time_output_precised);// below, to set precision up to 6 characters after commas 
-    let mut maxl_time_ns = maxl_time.as_nanos();
-/*Period of output*/let out_time = SDuration::from_secs(time_output_precised);//   
-    let out_time_nanos = out_time.as_nanos();
-/*step on y*/       let dt = match equation {
+    let max_time_output_precised_secs = (((time_ev.0 * 1000_000_000_f64)).ceil() as u64)/1000_000_000_u64;
+    let max_time_output_precised_nanosecs = (((time_ev.0 * 1000_000_000_f64)).ceil() as u64);
+    let time_output_precised_secs = (((time_ev.1 * 1000_000_000_f64)).floor() as u64)/1000_000_000_u64;
+    let time_output_precised_nanosecs = (((time_ev.1 * 1000_000_000_f64)).floor() as u64);
+    //__________________________________________________________________________//
+    let maxl_time_secs  = SDuration::from_secs(max_time_output_precised_secs);// below, to set precision up to 6 characters after commas 
+    let maxl_time_nanosecs  = SDuration::from_nanos(max_time_output_precised_nanosecs);
+    let mut maxl_time_secs = maxl_time.as_secs();
+    let mut maxl_time_nanosecs = maxl_time.as_nanos();
+/*Period of output*/let out_time_secs = SDuration::from_secs(time_output_precised_secs); 
+    let out_time_nanosecs = SDuration::from_nanos(time_output_precised_nanosecs); 
+    let mut out_time_secs = out_time_secs.as_secs();
+    let mut out_time_nanosecs = out_time_nanosecs.as_nanos();
+//---------------------------------------------------------------------------------------
+/*step on y*/let dt = match equation {
             0 => if a_positive {co * dx/(smax)} else {co * dx/(-smax)},
             1 => if possgn_smax {co * dx/(smax)} else {co * dx/(-smax)},
             _ => panic!("Not type match")
@@ -322,7 +332,7 @@ let switch_time = advection_modes.4;
         let mut first_correction = vec![0_f64; width];
         let mut second_correction = vec![0_f64; width];
         let mut fu_next: f64 = 0.0;   
-        let mut fu_prev = 0.0;
+        let mut fu_prev: f64 = 0.0;
         let mut dtotal_loop = chrono::Duration::zero();
         let mut dtotal_loop_nanos = dtotal_loop.num_nanoseconds().unwrap();
         let mut y_index: usize = 0;
@@ -331,7 +341,7 @@ let switch_time = advection_modes.4;
         let mut period: usize = 0;
         let mut output_periods: Vec<usize> = Vec::new();
         let all_steps = if SIMPLE_STEP_TYPE {steps} else { steps + 2_usize};  
-
+//REDUCE_TIME_TO_INT
 let print_npy = DIVIDE_ALL_STEPS_TO_PYTHON_PIC;
 let dir_to_graphics: PathBuf = calculation_data_path.join("datas");
 show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, fi, "This is the time after initializing shape", Some("the_beggining_shape"), deb_my);
@@ -341,13 +351,13 @@ show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, 
     }
     else{
         //Loops dtermined by dt
-        let mut processed_time= chrono::Duration::nanoseconds(0);
+        let mut processed_time_nanos = chrono::Duration::nanoseconds(0);
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
         let mut begin= Instant::now(); 
         let mut curtime_on_vel = 0.0;            
         let mut fp_next: f64;
         let mut fp_prev: f64;
-        while approx_equal(current_time_on_dt - max_time_output_precised as f64, 0.0, 3){
+        while approx_equal(current_time_on_dt - maxl_time_nanosecs as f64, 0.0, 3) {
             if deb_my {
                 println!("{}",ansi_term::Colour::Yellow.underline().paint(format!("Rest time before loop: {}", time_ev.0 - current_time_on_dt)));
                 println!("all_steps: {}", all_steps);
@@ -355,12 +365,20 @@ show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, 
             curtime_on_vel = current_time_on_dt * fuu;
             let mut x_next: f64;
 //++++++++++++++++++++++++++++++++++++++++++++++++++++
-            let i = do_exact_solutions(equation, all_steps, curtime_on_vel, alpha, c, deb_my,  &mut vprevious, &mut first_ex, &mut second_ex);
+            do_exact_solutions(equation, all_steps, curtime_on_vel, alpha, c, deb_my,  &mut vprevious, &mut first_ex, &mut second_ex);
 //------------------------------------------------------------------------------
-if (!a_positive && equation==0)||(!possgn_smax && equation==1){//f<0
-    
-
+//Simply calculate second layer based on previous one
+            if !correction{
+                main_cycle_first_order(vprevious, inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, a_positive, possgn_smax,
+                    all_steps, debug_init);
+                }
+//Otherwise  calculate  with correction
+            else{
+                main_cycle_with_correction(vprevious, inner_vector, prediction, first_correction, second_correction, 
+                    fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, 
+                    all_steps, debug_init, type_of_correction_program, smooth_intensity);
             }
+        }
 
         }
     });
