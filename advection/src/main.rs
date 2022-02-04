@@ -16,8 +16,8 @@ use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_ma
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
 use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape};
-use input_structure::{TaskType, TaskTypeCs, FileParametres, FileParametresBuilder, initial_information_of_advection, 
-    advection_input, process_files, main_initialization, do_exact_solutions};
+use input_structure::{TaskType, TaskTypeCs, FileParametres, initial_information_of_advection, 
+    advection_input, process_files, main_initialization, do_exact_solutions, main_cycle_first_order, main_cycle_with_correction};
 #[macro_use]
 extern crate colour;
 #[macro_use] 
@@ -42,9 +42,7 @@ use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env,
 use time::{Duration};
 use chrono::{Duration as CDuration};
 use time::macros::date;
-#[warn(unused_imports)]
-use rand::{distributions::{Distribution, Uniform}, prelude::*};
-//use std::rand::{task_rng, Rng};
+use rand::{/*distributions::{Distribution, Uniform}, prelude::*, task_rng,*/ Rng, prelude::*};
 //Determine in cycle all provided for constants arguments, otherwise default.
 mod determine_my_impls{
     pub const INITIAL_INFO_ABOUT_PROGRAMM: bool = false;
@@ -142,7 +140,7 @@ fn main() {//-----------------------------------------
     let num_threads = num_cpus::get();
 //From this point I will determine file hierarchy on which output and input files will be.
 //----------------------------------------- 
-///First I need to determine places where to save input images, datas, etc.
+//First I need to determine places where to save input images, datas, etc.
     let env_path = env::current_dir().unwrap();
     let advection_path = env_path.join("src");
     let animation_path = advection_path.join("animation");
@@ -236,6 +234,7 @@ fn main() {//-----------------------------------------
 let mut file_parameters_from_cli = (Vec::<FileParametres>::new(), Vec::<String>::new());
 let calculation_path_as_string = calculation_path.into_os_string().into_string().unwrap();
 let deb_my = advection_modes.2;
+let correction = advection_modes.1;
 if deb_my{
     file_parameters_from_cli = process_files(&mut file_paths_with_examples, Some(advection_modes.3), 
         Some(advection_modes.0), Some(LETS_DO_PAUSE), Some(calculation_path_as_string)).unwrap();
@@ -263,6 +262,7 @@ let debug_add = advection_modes.2.clone();
 /*Transfer_velocity*/let velocity_t = fiarg.add_args.0.clone();
 let time_decrease: f64 = 20.0;
 let switch_time = advection_modes.4;
+let type_of_correction_program = true;
 /*period of end and output*/let time_ev = fiarg.time_eval_period_stage;
     //In any way in process_clfile I had written TRANSFER, so i can switch it there
     //But more convienient as I suppose that if TRANSFER=0_f32, then switch)  
@@ -276,9 +276,11 @@ let switch_time = advection_modes.4;
     println!("Velocity from input: {veloc}");
     let a_positive: bool = veloc > 0.0; //add parameter to detect sheme later
     info!("Sign of speed: {}\n", a_positive);
-    let (mut first_ex , mut second_ex , mut temporary, mut vprevious, mut diferr_0, mut x_v_w_txt_0, mut x_v_w_csv_0, smax) = 
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    let (mut first_ex , mut second_ex , mut temporary, mut vprevious, mut inner_vector, mut diferr_0, mut x_v_w_txt_0, mut x_v_w_csv_0, smax) = 
         main_initialization(steps, debug_add, calculation_path_as_str, fi.clone(), 
             equation, i_type, dx, i_parameters.0, i_parameters.1, i_parameters.2.unwrap_or(0_f64), veloc, domain.0, domain.1, CHECK_ENDS_OF_DOMAIN);
+//----------------------------------------------------------------------------------------
 //________________________________Some precycle clarification_______________________//  
     let ELEMENTS_PER_RAW_PYARRAY: usize = ((steps as f32).floor()) as usize;//This will output array with this or less amount of columns
     let existing_time = temporary.iter().min_by(|a, b|
@@ -301,14 +303,14 @@ let switch_time = advection_modes.4;
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     //To pass in method std::Duration as u64 digit I need to converge it
     let max_time_output_precised_secs = (((time_ev.0 * 1000_000_000_f64)).ceil() as u64)/1000_000_000_u64;
-    let max_time_output_precised_nanosecs = (((time_ev.0 * 1000_000_000_f64)).ceil() as u64);
+    let max_time_output_precised_nanosecs = ((time_ev.0 * 1000_000_000_f64)).ceil() as u64;
     let time_output_precised_secs = (((time_ev.1 * 1000_000_000_f64)).floor() as u64)/1000_000_000_u64;
-    let time_output_precised_nanosecs = (((time_ev.1 * 1000_000_000_f64)).floor() as u64);
+    let time_output_precised_nanosecs = ((time_ev.1 * 1000_000_000_f64)).floor() as u64;
     //__________________________________________________________________________//
     let maxl_time_secs  = SDuration::from_secs(max_time_output_precised_secs);// below, to set precision up to 6 characters after commas 
     let maxl_time_nanosecs  = SDuration::from_nanos(max_time_output_precised_nanosecs);
-    let mut maxl_time_secs = maxl_time.as_secs();
-    let mut maxl_time_nanosecs = maxl_time.as_nanos();
+    let mut maxl_time_secs = maxl_time_secs.as_secs();
+    let mut maxl_time_nanosecs = maxl_time_nanosecs.as_nanos();
 /*Period of output*/let out_time_secs = SDuration::from_secs(time_output_precised_secs); 
     let out_time_nanosecs = SDuration::from_nanos(time_output_precised_nanosecs); 
     let mut out_time_secs = out_time_secs.as_secs();
@@ -355,8 +357,8 @@ show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, 
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
         let mut begin= Instant::now(); 
         let mut curtime_on_vel = 0.0;            
-        let mut fp_next: f64;
-        let mut fp_prev: f64;
+        let mut fp_next: f64 = 0.0;
+        let mut fp_prev: f64 = 0.0;
         while approx_equal(current_time_on_dt - maxl_time_nanosecs as f64, 0.0, 3) {
             if deb_my {
                 println!("{}",ansi_term::Colour::Yellow.underline().paint(format!("Rest time before loop: {}", time_ev.0 - current_time_on_dt)));
@@ -369,14 +371,14 @@ show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, 
 //------------------------------------------------------------------------------
 //Simply calculate second layer based on previous one
             if !correction{
-                main_cycle_first_order(vprevious, inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, a_positive, possgn_smax,
-                    all_steps, debug_init);
+                main_cycle_first_order(&mut vprevious,&mut inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, a_positive, possgn_smax,
+                    all_steps, deb_my);
                 }
 //Otherwise  calculate  with correction
             else{
-                main_cycle_with_correction(vprevious, inner_vector, prediction, first_correction, second_correction, 
+                main_cycle_with_correction(&mut vprevious,&mut inner_vector,&mut prediction,&mut first_correction,&mut second_correction, 
                     fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, 
-                    all_steps, debug_init, type_of_correction_program, smooth_intensity);
+                    all_steps, deb_my, type_of_correction_program, smooth_intensity);
             }
         }
 
