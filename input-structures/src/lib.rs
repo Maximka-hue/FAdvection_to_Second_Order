@@ -28,14 +28,48 @@ use clap::{ ColorChoice, Arg, ArgGroup, App};
 use clap::{app_from_crate, arg, crate_name};
 use walkdir::{DirEntry};
 use std::time::{Duration, Instant as SInstant};
-use std::{ thread, io::Write, fs::{self, File, OpenOptions, read_to_string}, env, error::Error};
+use std::{thread, io::Write, fs::{self, File, OpenOptions, read_to_string}, env, error::Error};
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use log::info;
+use libc::{c_double, c_long};
+pub mod smooth; 
+use smooth::smoothZF_rs;
 
 pub const MY_ARGUMENT_PROCESS: bool = true;
 pub const ARGUMENTS_PRINT: bool = true;
 pub const PROCESS_DETAIL: bool = true;
+pub const MONOTIZATION_MIN: usize = 50;
+pub const MONOTIZATION_MAX: usize = 350;
+
+
+extern "C" {
+    fn smooth_arr_zm_fur(Fs: *mut c_double, Nmax: c_long /*i64*/, smooth_intensity: c_double, Fi: *mut c_double, Ftd: *mut c_double) ->  c_long;
+    fn callback();
+}
+#[cfg(target_os = "linux")]
+fn call_callback() -> Box<()>{
+    unsafe{
+        Box::new(callback())
+    }
+}
+#[cfg(target_os = "linux")]
+fn call_smooth(inner_vector: &mut Vec<f64>, all_steps: usize, smooth_intensity: f64, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>) -> i64 //this is std c error if !=0.
+    //-> Box<Fn(Vec<f32>, i32, f32, Vec<f32>, Vec<f32>) -> i32>  //I am transfer as arguments **mut reference**)
+    {
+        unsafe{//This is c function
+            smooth_arr_zm_fur(inner_vector.as_mut_ptr() as *mut f64, all_steps as i64, smooth_intensity as f64,
+                first_correction.as_mut_ptr() as *mut f64, second_correction.as_mut_ptr() as *mut f64)
+        }
+    //Box::new(smooth_arr_zm_fur(inner_vector.as_mut_ptr() as *mut f64, all_steps as i32, smooth_intensity,
+    //    first_correction.as_mut_ptr() as *mut f64, second_correction.as_mut_ptr() as *mut f64))
+}
+#[cfg(not(target_os = "linux"))]
+fn call_smooth(inner_vector: &mut Vec<f64>, all_steps: usize, smooth_intensity: f64, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>) 
+    //-> Box<Fn(Vec<f32>, i32, f32, Vec<f32>, Vec<f32>) -> i32>
+    {//This is rust function
+        smoothZF_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction)
+}
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
 pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
@@ -682,67 +716,117 @@ let smax: f64 = match equation{
     println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
 (first_ex , second_ex , temporary, vprevious, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
 }
-pub fn main_cycle(a_positive: bool, possgn_smax: bool, ) {
-//This case is 
-        for k in 0..all_steps-1{// from second to prelast
-            if smooth_correction && k!=0 {
-            fu_next = match &equation{
+//+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, dt: f64, dx: f64, equation: i8, a_positive: bool, possgn_smax: bool,
+        all_steps: usize, debug_init: bool){
+//This case will pass when f<0
+    if (!a_positive && equation==0) || (!possgn_smax && equation==1){//f<0
+        //Doing forward scheme
+        for k in 0..all_steps-1 {// from first to prelast
+            fu_next = match equation {
                 0=> fuu * vprevious[k+1],
-                1=> vprevious[k+1].powi(2)/2 as f32,
-                _ =>  0_f32};
-            fu_prev = match &equation {
+                1=> vprevious[k+1] * vprevious[k+1] / 2.0,
+                _ =>  0.0};
+            fu_prev = match equation {
                 0=> fuu * vprevious[k],
-                1=> vprevious[k].powi(2)/2 as f32,
-                _ =>  0_f32};
-            prediction[k] =  vprevious[k] - (dt/dx)*(fu_next - fu_prev); 
-            //*prediction = *prediction.wrapping_offset(step);
-            fp_next =  match &equation{
-                0=> fuu * prediction[k] as f32,
-                1=> prediction[k] * prediction[k]/2 as f32,
-                _ =>  0_f32};
-        //prediction = prediction.wrapping_offset(-2 * step);
-            fp_prev = match &equation{
-                0=> fuu * prediction[k-1] as f32 ,
-                1=> prediction[k-1] * prediction[k-1] /2 as f32,
-                _ =>  0_f32};
-            inner_vector[k] = 0.5 * vprevious[k] + prediction[k] - (dt/dx) * (fp_next - fp_prev);
-            }
-        else {
-            fu_next = match &equation{
-                0=> fuu * vprevious[k+1],
-                1=> vprevious[k+1] * vprevious[k+1]/2 as f32,
-                _ =>  0_f32};
-            fu_prev = match &equation{
-                0=> fuu * vprevious[k],
-                1=> vprevious[k] * vprevious[k]/2 as f32,
-                _ =>  0_f32};
+                1=> vprevious[k] * vprevious[k] / 2.0,
+                _ =>  0.0};
             inner_vector[k] = vprevious[k] - (dt/dx)*(fu_next - fu_prev);
         }
-    if smooth_correction && type_of_correction_program {//type_of_correction_program true, then wil be used .rs file programm
-            println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
-            Style::new().foreground(Red).bold().paint("smooth_intensity"),
-            Style::new().foreground(Blue).italic().paint("will be smoothed out with rust function 'smoothZF_rs'."));
-            smoothZF_rs(&mut inner_vector, all_steps, smooth_intensity, &mut first_correction, &mut second_correction);
     }
-    else if smooth_correction && all_steps>49_usize && all_steps <301_usize {//this will call native program on c
-            println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
-                Style::new().foreground(Red).bold().paint("smooth_intensity"),
-                Style::new().foreground(Blue).italic().paint("will be smoothed out with c function 'Smooth_Array_Zhmakin_Fursenko'."));
-            call_smooth(&mut inner_vector, all_steps, smooth_intensity,
-                &mut first_correction, &mut second_correction);
+//This case will pass when f>0
+    else if (a_positive && equation==0)||(possgn_smax && equation==1) {
+        for k in 1..all_steps {// from second to last
+            fu_next = match equation {
+                0=> fuu * vprevious[k],
+                1=> vprevious[k] * vprevious[k] / 2.0,
+                _ =>  0.0};
+            fu_prev = match equation {
+                0=> fuu * vprevious[k],
+                1=> vprevious[k-1] * vprevious[k-1] / 2.0,
+                _ =>  0.0};
+            inner_vector[k] = vprevious[k] - (dt/dx)*(fu_next - fu_prev);
         }
-    else if smooth_correction{
-            println!("Steps must be set to default maximum value(200)");
-            panic!("For correction needed another step value!")
+    }
+    else if (fuu == 0.0 && equation==0) || (equation == 1) {
+        std::panic!("{}", &format!("{}", "This mustn'be the case!".on_truecolor(135, 28, 167))[..]);
+    }
+}
+pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, prediction: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
+        fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, all_steps: usize, debug_init: bool,
+            type_of_correction_program: bool, smooth_intensity: f64) {
+    for k in 0..all_steps-1 {// from second to prelast
+//First intermidiate future step
+        fu_next = match equation{
+            0=> fuu * vprevious[k+1] as f64,
+            1=> vprevious[k+1].powi(2) / 2.0,
+            _ =>  0.0};
+        fu_prev = match equation {
+            0=> fuu * vprevious[k] as f64,
+            1=> vprevious[k].powi(2)/ 2.0,
+            _ =>  0.0};
+        prediction[k] =  vprevious[k] - (dt/dx)*(fu_next - fu_prev); 
+        //*prediction = *prediction.wrapping_offset(step);
+//Then last backward propagation
+        fp_next =  match equation {
+            0=> fuu * prediction[k] as f64,
+            1=> (prediction[k] * prediction[k])/2.0,
+            _ =>  0.0};
+        //prediction = prediction.wrapping_offset(-2 * step);
+        fp_prev = match equation{
+            0=> fuu * prediction[k-1] as f64,
+            1=> prediction[k-1] * prediction[k-1] /2.0,
+            _ =>  0.0};
+        inner_vector[k] = 0.5 * (vprevious[k] + prediction[k] - (dt/dx) * (fp_next - fp_prev));
+        if type_of_correction_program {//type_of_correction_program true, then wil be used .rs file programm
+            monotization_rs(inner_vector, first_correction, second_correction,
+                all_steps, smooth_intensity);
         }
-        if k % 5 as usize == 0 {
-            println!("Array on next layer {}, fu_next(u) {}\n", inner_vector[k], fu_next);
+        else{
+            monotization_c(inner_vector, first_correction, second_correction,
+                all_steps, smooth_intensity);
+        }
+        if k % 5 as usize == 0 && debug_init{
+            println!("{} {}, fu_next(u) {}\n", "Array on next layer".italic().yellow(), inner_vector[k], fu_next);
             info!("{}", format!("{} element: with value {}", k, inner_vector[k]));
-            }
+        }
+        else if k % (all_steps / 10_usize) == 0_usize{
+            println!("{} {}, fu_next(u) {}\n", "Array on next layer".italic().yellow(), inner_vector[k], fu_next);
+            info!("{}", format!("{} element: with value {}", k, inner_vector[k]));
         }
     }
 }
 
+pub fn monotization_rs(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
+    all_steps: usize, smooth_intensity: f64){
+    if all_steps > MONOTIZATION_MIN && all_steps < MONOTIZATION_MAX {
+        println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
+            Style::new().foreground(Red).bold().paint("smooth_intensity"),
+            Style::new().foreground(Blue).italic().paint("will be smoothed out with rust function 'smoothZF_rs'."));
+        smoothZF_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction);
+    }
+    else{
+        println!("Steps must be set to be within range ({}) : {MONOTIZATION_MIN}...{MONOTIZATION_MAX} ", 
+            Style::new().foreground(Red).bold().paint("default average - maximum value(200)"));
+        panic!("For correction needed another step value!")
+    }
+}
+pub fn monotization_c(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
+    all_steps: usize, smooth_intensity: f64){
+    if all_steps > MONOTIZATION_MIN && all_steps < MONOTIZATION_MAX {//this will call native program on c
+        println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
+            Style::new().foreground(Red).bold().paint("smooth_intensity"),
+            Style::new().foreground(Blue).italic().paint("will be smoothed out with c function 'Smooth_Array_Zhmakin_Fursenko'."));
+        call_smooth(inner_vector, all_steps, smooth_intensity,
+            first_correction, second_correction);
+    }
+    else{
+        println!("Steps must be set to be within range ({}) : {MONOTIZATION_MIN}...{MONOTIZATION_MAX} ", 
+            Style::new().foreground(Red).bold().paint("default average - maximum value(200)"));
+        panic!("For correction needed another step value!")
+    }
+}
+//-----------------------------------------------------------------------------------
 pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
     vprevious: &mut Vec<f64>, first_ex: &mut  Vec<f64>, second_ex: &mut Vec<f64>)// -> (Vec<f64>, Vec<f64>, Vec<f64>)
     {
