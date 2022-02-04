@@ -323,6 +323,19 @@ pub fn is_dir_hidden(entry: &DirEntry) -> bool {
          .map(|s| s.starts_with("."))
          .unwrap_or(false)
 }
+fn create_safe_file(path: &str) -> Result<(), std::io::Error>{
+    std::fs::File::open(&path).unwrap_or_else(|error| {
+        if error.kind() == ErrorKind::NotFound {
+            File::create(&path).unwrap_or_else(|error| {
+                panic!("Problem creating the file: {:?}", error);
+            })
+        } 
+        else {
+            panic!("Problem opening the file: {:?}", error);
+        }
+        });
+    Ok(())
+}
 
     // --------------------------------------------------
 #[derive(Debug, Clone)]
