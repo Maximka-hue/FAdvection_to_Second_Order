@@ -11,7 +11,6 @@
 #![feature(path_try_exists)]
 #[macro_use]
 extern crate time; 
-pub use input_structure;
 use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_macros::macro_lrls::{pt}};
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
@@ -32,7 +31,6 @@ use log::{debug, error, info, warn};
 extern crate walkdir;
 use walkdir::{DirEntry, WalkDir};
 use gtk::prelude::*;
-use gio::prelude::*;
 use rayon::{prelude::*};
 use gtk::{Application, ApplicationWindow, Box as GTKBox, Button, Label};
 pub use ansi_term::{Colour::{Fixed, Black as AnsiBlack, Red as AnsiRed, Green as AnsiGreen, Yellow as AnsiYellow, Blue as AnsiBlue, Purple as AnsiPurple, 
@@ -282,7 +280,7 @@ let type_of_correction_program = true;
             equation, i_type, dx, i_parameters.0, i_parameters.1, i_parameters.2.unwrap_or(0_f64), veloc, domain.0, domain.1, CHECK_ENDS_OF_DOMAIN);
 //----------------------------------------------------------------------------------------
 //________________________________Some precycle clarification_______________________//  
-    let ELEMENTS_PER_RAW_PYARRAY: usize = ((steps as f32).floor()) as usize;//This will output array with this or less amount of columns
+    let elements_per_raw_pyarray: usize = ((steps as f32).floor()) as usize;//This will output array with this or less amount of columns
     let existing_time = temporary.iter().min_by(|a, b|
         a.partial_cmp(&b).unwrap_or(Ordering::Less)).unwrap_or(&0_f64);
     println!("Minimum in temporary error vector: {}", &existing_time); 
