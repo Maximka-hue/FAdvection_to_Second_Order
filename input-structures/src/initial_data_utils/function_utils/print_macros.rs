@@ -7,9 +7,9 @@ pub use termion::color as termcolor;
 use ansi_term::{self, Colour::Fixed};
 use std::fmt::Debug;
 extern crate rand;
-use rand::{prelude::*, Rng, SeedableRng};
-use simple_colors;
-
+pub(crate) use rand::{prelude::*, Rng};
+const RANDOM_INTEGERS: u8 = 6;
+const ADDITIONAL_PRINT_RANDOM: bool = false;
 pub mod macro_lrls {
     /*
     #[allow(missing_docs)]
@@ -57,8 +57,8 @@ macro_rules! fill_none {
         };
     
     }
-
-    fn deduce_default(){
+#[warn(unused_macros)]
+fn deduce_default(){
          #[allow(missing_docs)]
          #[macro_export]
          #[allow(unused)]
@@ -68,11 +68,13 @@ macro_rules! fill_none {
                    )*
               };}
          }
-    macro_rules! replace_expr {
-         ($_t:tt $sub:expr) => {$sub};
-    }
+#[allow(missing_docs)]
+#[macro_export]
+#[allow(unused)]
+macro_rules! replace_expr {
+    ($_t:tt $sub:expr) => {$sub};
+}
     #[allow(missing_docs)]
-    #[warn(unused_macros)]
     #[macro_export]
     macro_rules! pt {
         ($($arg:expr),*) => {
@@ -80,7 +82,6 @@ macro_rules! fill_none {
         }
     }
     #[allow(missing_docs)]
-    #[warn(unused_macros)]
     #[macro_export]
     macro_rules! generate_random_parameters {
         ($($arg:expr),*) => {
@@ -88,7 +89,6 @@ macro_rules! fill_none {
         }
     }
     #[allow(missing_docs)]
-    #[warn(unused_macros)]
     #[macro_export]
     macro_rules! mypt {
      ($($arg:expr),*) => {
@@ -105,10 +105,10 @@ macro_rules! fill_none {
         }
 pub use generate_random_parameters;
 pub use {mypt,pt};
+#[allow(unused)]
 pub(crate) use scanline;
 }
 pub mod shorthand_functions {
-     use std::time::{Instant};
      use chrono::{Local};
      use super::*;
      pub const  PRINTFUNC_DBGOUT: bool = false;
@@ -193,13 +193,13 @@ pub fn mypt<'a, S: AsRef<str>> (text: S, con_text: Option<&str>, textv: Option<&
      let colst = define_my_colour_style(&context.to_lowercase(), None);
      let cs = colour_style.unwrap_or(("", ""));
      println!("{:?}", colst);
-     let TextContext = PrimaryColor::new(colst.0, colst.1);
+     let text_context = PrimaryColor::new(colst.0, colst.1);
      let local_time = Local::now();
-     TextContext.print(&format!("{} {}", &text.into(), termcolor::Fg(termcolor::Reset))[..]);
+     text_context.print(&format!("{} {}", &text.into(), termcolor::Fg(termcolor::Reset))[..]);
      println!();
      if context.contains("time") || context.contains("dbg") || context.contains("debug"){
           dark_green!("Local time: ");
-          TextContext.println(&format!("\n\t{}", local_time)[..]);
+          text_context.println(&format!("\n\t{}", local_time)[..]);
      }
 }
 pub fn pt<'a, S: AsRef<str>> (text: S, con_text: Option<&str>,  textv: Option<&Vec<String>>, colour_style: Option<PrintStyle>, data_in_row: Option<u32>)
@@ -233,13 +233,13 @@ if PRINTFUNC_DBGOUT {println!("{:?}", colour_style);}
 let local_time = Local::now();
 if context.contains("time") || context.contains("dbg") || context.contains("debug"){
      green!("Local time: ");
-     ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(221)).fg(ansi_term::Colour::Fixed(124)).paint(&format!("\n\t\t{ }\n", local_time)[..]);
-          }
-green!("{} {}", &text.into(), termcolor::Fg(termcolor::Reset));
+     let ggg = ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(221)).fg(ansi_term::Colour::Fixed(124)).paint(format!("\n\t\t{ }\n", local_time));
+     println!("{:?}", ggg); 
+     }
+     green!("{} {}", &text.into(), termcolor::Fg(termcolor::Reset));
      }
 
-pub fn generate_random_parameters(floating_point_numbers: Option<u8>, integer_numbers: Option<u8>) -> Result<((Vec<i8>, Vec<f64>)), ()>{
-          const RANDOM_INTEGERS: u8 = 6;
+pub fn generate_random_parameters(floating_point_numbers: Option<u8>, integer_numbers: Option<u8>) -> Result<(Vec<i8>, Vec<f64>), ()>{
           let mut float_values = Vec::<f64>::with_capacity(10);
           let mut integer_vec_values: Vec<i8>;
           let integer_number: usize;
@@ -251,7 +251,7 @@ pub fn generate_random_parameters(floating_point_numbers: Option<u8>, integer_nu
           let random_parameters: (Vec<i8>, Vec<f64>);
           //11 required and 5 Optional + Tasktype = 4_i8 + 10_f64 + 2 bool and Tasktype
           let mut integer_values = [0u8; 4];
-          for _ in 0..10 {
+          for _ in 0..11 {
           //begin (inclusive) to end (exclusive)
                float_values.push(random_example.gen_range(0.5_f64..20_f64));
           }
@@ -260,12 +260,13 @@ pub fn generate_random_parameters(floating_point_numbers: Option<u8>, integer_nu
           float_values.sort_by(|i, j| i.partial_cmp(j).unwrap());
           random_example.fill_bytes(&mut integer_values);
           let random_integers: Vec<i8> = integer_values.map(|inv| (inv % 2) as i8).to_vec();
-          println!("{} {:#?}\n {:#?}" , ansi_term::Style::new().on(ansi_term::Colour::Fixed(28)).fg(ansi_term::Colour::Fixed(128)).paint("Generating random parameters: "),
-               &random_integers , &float_values);
-          random_parameters = (random_integers, float_values);
-          //let (rtime_eval_period_stage, rinit_conditions , rmargin_domain, rquantity_split_nodes, rn_corant) =    
-          println!("{} {:#?}\n", ansi_term::Style::new().on(ansi_term::Colour::Fixed(28)).fg(ansi_term::Colour::Fixed(128)).paint("Total random parameters: "),
-               &random_parameters);
+          if ADDITIONAL_PRINT_RANDOM {
+               println!("{} {:#?}\n {:#?}" , ansi_term::Style::new().on(Fixed(28)).fg(Fixed(128)).paint("Generating random parameters: "),
+                    &random_integers , &float_values);
+               }
+          random_parameters = (random_integers, float_values);   
+               println!("{} {:?}\n", ansi_term::Style::new().on(Fixed(28)).fg(Fixed(128)).paint("Total random parameters: "),
+                    &random_parameters);
           Ok(random_parameters)
      }
 }
