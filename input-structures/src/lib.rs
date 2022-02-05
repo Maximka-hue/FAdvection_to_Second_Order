@@ -33,8 +33,11 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use log::info;
 use libc::{c_double, c_long};
-pub mod smooth; 
-use smooth::smoothZF_rs;
+
+
+#[path="./smooth.rs"]
+pub mod smooth;
+use smooth::smooth_zf_rs;
 
 pub const MY_ARGUMENT_PROCESS: bool = true;
 pub const ARGUMENTS_PRINT: bool = true;
@@ -68,7 +71,7 @@ fn call_smooth(inner_vector: &mut Vec<f64>, all_steps: usize, smooth_intensity: 
 fn call_smooth(inner_vector: &mut Vec<f64>, all_steps: usize, smooth_intensity: f64, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>) 
     //-> Box<Fn(Vec<f32>, i32, f32, Vec<f32>, Vec<f32>) -> i32>
     {//This is rust function
-        smoothZF_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction)
+        smooth_zf_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction)
 }
 
 type MyResult<T> = Result<T, Box<dyn Error>>;
@@ -267,7 +270,7 @@ impl MyConfiguration {
     }
 }
 
-mod StrctOptImpl{
+mod strct_opt_impl{
     use super::{StructOpt, PathBuf};
     //___________________________________________________________________________________________________
 #[derive(Debug, StructOpt)]
@@ -300,7 +303,6 @@ type StdtResult<T> = std::result::Result<(Vec<T>, Vec<String>), Box<dyn Error>>;
 pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: Option<bool>, should_sleep: Option<bool>, init_dir: Option<String>) 
 -> StdtResult<FileParametres>
 {
-    use std::fs::File;
     let additional_print = if let Some(d) = db{
         d
     }
@@ -362,7 +364,7 @@ Boundary type: {data5}  {sep}
 Initial type: {data6}  {sep}  
 Initial conditions: {data7:?} {sep} 
 Quantity split nodes: {data8:?} {sep} 
-Courant number: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
+Courant number: {data9}  \nThis file was {fnum} with path {new_buf:?}",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
             data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
             data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = ',')).as_bytes());
             if additional_print{
@@ -468,7 +470,7 @@ pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &st
     equation: i8, type_of_initial_cond: i8, dx: f64, centre: f64, width: f64, height: f64, veloc: f64, left: f64, right: f64, check_flag_for_partition: bool)
     -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, File, File, File, f64){
     use std::time::Instant;
-    let init_t  = std::time::Instant::now();
+    let init_t  = Instant::now();
     let deb_init = true;
     println!("{}", Style::new().foreground(Blue).italic().paint("Constructing array \nfor saving values of function"));
     let mut vprevious = vec![0_f64; steps];
@@ -573,7 +575,7 @@ let smax: f64 = match equation{
             1 => {
                 println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса"));
                 for n in 0..dip/2+1 {//this is not odd dip
-                    let mut x_next = start + n as usize;
+                    x_next = start + n as usize;
                     vprevious[x_next] = (height as f64 *2.0) as f64 * (dx * n as f64) /width as f64;
                     first_ex[x_next] = vprevious[x_next].clone();
                     temporary[x_next] = 2_f64 * width/height;
@@ -590,7 +592,7 @@ let smax: f64 = match equation{
                     println!("Остальные слева == 0");
             }
                 for n in dip/2+1..dip+1 {
-                    let mut x_next = start + n;
+                    x_next = start + n;
                     vprevious[x_next] = height - (height *2.0) * (dx*(n-dip/2) as f64) / width;
                     first_ex[x_next] = vprevious[x_next].clone();
                     temporary[x_next] = -2_f64 * width/height;
@@ -803,7 +805,7 @@ pub fn monotization_rs(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f
         println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
             Style::new().foreground(Red).bold().paint("smooth_intensity"),
             Style::new().foreground(Blue).italic().paint("will be smoothed out with rust function 'smoothZF_rs'."));
-        smoothZF_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction);
+        smooth_zf_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction);
     }
     else{
         println!("Steps must be set to be within range ({}) : {MONOTIZATION_MIN}...{MONOTIZATION_MAX} ", 
@@ -845,7 +847,7 @@ pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, 
                 l = l_new as f64;
             } 
             else {
-                l_new = if l as usize >= 0 {l as usize} else { (all_steps as f64 + l) as usize};
+                l_new = if l >= 0.0 {l as usize} else { (all_steps as f64 + l) as usize};
                 second_ex[k] = first_ex[l_new].clone();
             }
         }
