@@ -8,10 +8,8 @@ extern crate path_clean;
 use handle::Handle;
 use log::info;
 use path_clean::PathClean;
-//use print_macros::*;
-use std::borrow::Borrow;
-use std::{thread, io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write, Error},
-    path::{Path, PathBuf},{time::{Instant, Duration}}, fs::{self, OpenOptions, File}, env};
+use std::{thread, io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write},
+    path::{Path, PathBuf},{time::{ Duration}}, fs::{self, OpenOptions, File}, env};
 use named_tuple::named_tuple;
 //use std::path::{Path, PathBuf};
 extern crate custom_error;
@@ -31,12 +29,10 @@ use std::fmt::{Debug, Formatter};
 #[warn(unused_imports)]
 use text_colorizer::*;
 use termion;
-use std::sync::{Arc, Mutex};
 use std::error::Error as SError;//**** 
 type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
 
 //use dao_ansi::color::kinds::{ForegroundColor, BackgroundColor, PrimaryColor};
-use better_term::{flush_styles, rainbowify};
 /* Regex 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -264,8 +260,8 @@ pub fn create_output_dir(mut fnum: usize, num_files: usize, should_sleep: bool, 
 
 pub fn write_at_end<W: Write + Seek>(writer: &mut W, amount_of_files: usize) -> io::Result<()> {
         writer.seek(SeekFrom::End(0))?;
-        for i in 0..(amount_of_files+1_usize) {
-            writer.write("\n{i}".as_bytes())?;
+        for ii in 0..(amount_of_files+1_usize) {
+            writer.write("\n{ii}".as_bytes())?;
         }
         // all went well
         Ok(())
@@ -303,15 +299,15 @@ pub fn parse_positive_int(val: &str) -> MyResult<usize> {
     }
 }
 
-pub fn traverse_not_hidden_files(PATH_DEBUG_INFO: bool, MAXIMUM_FILES_TO_EXPECT: usize, input_fpath: &PathBuf) -> Vec<PathBuf> {
+pub fn traverse_not_hidden_files(path_debug_info: bool, maximum_files_to_expect: usize, input_fpath: &PathBuf) -> Vec<PathBuf> {
     let mut all_txt: Vec<PathBuf> = Vec::new();
     let walker = WalkDir::new(&input_fpath).into_iter();
     for entry in walker.filter_entry(|e| !is_dir_hidden(e)) {
         all_txt.push(PathBuf::from(entry.unwrap().path().clone()));
         }
         //First is directory itself
-        let all_txt = all_txt[1..MAXIMUM_FILES_TO_EXPECT+1usize].to_vec();
-        if PATH_DEBUG_INFO{ 
+        let all_txt = all_txt[1..maximum_files_to_expect+1usize].to_vec();
+        if path_debug_info{ 
         for path_txt in &all_txt{
             println!("{}", path_txt.display());}
         }
@@ -383,7 +379,7 @@ impl Argumento {
             pt!("Debug check for txt files", "dbg", &args_vec, PrintStyle::Debug);
         }
         let query = args[1].clone();
-        println!("args[1]: {}", query);
+        println!("{}", "args[1]: {query}".bold().italic());
         pt!(&query, "impl");
         let mut vec_ap: Vec<String> = Vec::with_capacity(5*4);
         for f in args_vec.into_iter(){
@@ -416,7 +412,7 @@ pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String
                 //Err(error) => println!("error: {}", error.0 as u8),     >>>>>>>>>>>>>>>>>>>>>
             }
             let rinsed_data: Vec<&str> = crude_data.split("\n").collect();
-            println!("Rinsed: {:#?}", &rinsed_data);
+            println!("{} {rinsed_data:?}", "Rinsed: ".bold().italic());
             let mut new_init_data = Vec::with_capacity(25);
             let mut rubbish = Vec::with_capacity(25);
             for x in rinsed_data{
@@ -455,7 +451,7 @@ pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String
                 new_init_data.push(y);
                 }
             }
-            println!("Rb_comments: {:#?}", rubbish);
+            println!("{} {rubbish:#?}", "Rb_comments: ".bold().italic());
                     //println!("{}",new_init_data.len());
                    /*let y = x.retain(|c| c !=',').as_str();
                     init[0].push_str(y);*/
@@ -464,8 +460,8 @@ pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String
     fn read_string(comment:&str) -> (String, u8) {
         print!("{}", comment);
         io::stdout().flush().expect("flush");
-        const ilen: u8 = 20;
-        let mut string: String = String::with_capacity(ilen as usize);
+        const ILEN: usize = 20;
+        let mut string: String = String::with_capacity(ILEN);
         let iolen:u8 = io::stdin().read_line(&mut string).ok().expect("Error read line!") as u8;
         println!("You had written {} bytes", iolen);
             return (String::from(string.trim()), iolen);
