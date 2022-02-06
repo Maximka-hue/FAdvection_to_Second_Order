@@ -8,16 +8,14 @@ use crate::initial_data_utils::function_utils::{cfutils::{Argumento, ArgumentPar
 pub use derive_builder::Builder;
 pub use std::borrow::Cow;
 pub use std::default::Default;
-#[warn(unused_imports)]
-use std::fs::{self, File, write, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 pub use std::path::{self, PathBuf, Path};
-use std::time::{self, Instant, Duration};
-use tcprint::{tcprintln , BasicColors, ColorPrintState, Color as TColor, ColorSpec};
-use std::{io::Write,env, thread};
-use tutil::crayon::{ Color};
+use std::time::{self, Instant};
+use tcprint::{Color as TColor, ColorSpec};
+use std::{io::Write, env, thread};
 use ansi_term::{Style, Colour::*};
 use std::sync::{Mutex, Arc};
-use itertools::{cons_tuples, Itertools};
+use itertools::{Itertools};
 const SWITCH_TIME: bool= false;
 use std::collections::HashSet;
 use std::process;
@@ -109,7 +107,7 @@ impl FileParametresBuilder {
             else {
                 if approx_equal(input_time_boundary.0, input_time_boundary.1, 3) {
                 //.... They must not be approximately less then 3 decimal points
-                return Err(format!("Time boundary is too close for calculation: {} ~ {}", input_time_boundary.0, input_time_boundary.1 ))
+                return Err(format!("Time boundary is too close for calculation: {} ~ {}", input_time_boundary.0, input_time_boundary.1 ));
                 }
                 else {
                     red!("Incorrect time specification: {}", self.time_eval_period_stage.unwrap().0);
@@ -122,15 +120,15 @@ impl FileParametresBuilder {
                 return Ok(())
             }
         }
-        if let boundary = self.margin_domain.unwrap_or((0_f64, 0_f64)){
+            let boundary = self.margin_domain.unwrap();//_or((0_f64, 0_f64)
             //(time_period.0 - time_period.1).abs() < std::f32::MIN 
-            let mut left = boundary.0;
-            let mut right = boundary.1;
+            let left = boundary.0;
+            let right = boundary.1;
             let qsn = self.quantity_split_nodes.unwrap_or(100_f64);
             let domain_ends_difference = (left - right).abs();
             let dx = domain_ends_difference / qsn;
             if approx_equal(boundary.0, boundary.1, 3) {
-                return Err(format!("Time boundary is too close for calculation: {} ~ {}", boundary.0, boundary.1 ))
+                return Err(format!("Domain boundary is too close for calculation: {} ~ {}", boundary.0, boundary.1 ));
             }
             else if (left - right) < 0.0 {
                 self.margin_domain.unwrap().0 = right;
@@ -146,10 +144,8 @@ impl FileParametresBuilder {
             else if approx_equal(dx, 0.000001, 6) {
                 panic!("Fragmentation is too small!")
             }
-        }
-        else{
-            return Ok(())
-        }/*
+            return Ok(());
+        /*
         {
             println!("Incorrect Domain input");
             panic!("Domain is 0!");
@@ -475,7 +471,7 @@ fn create_output_dir(fnum: usize, num_files: usize) -> StdResult<( PathBuf, File
     let temp_fi = new_path.join(format!(r"parameters_nf{}.txt", fnum));
     //let mut processed_params =  std::fs::File::open(&temp_fi).unwrap();
     //println!("{:?}", processed_params);
-    let processed_params =  fs::OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&temp_fi).unwrap_or_else(|error| {
+    let processed_params =  OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&temp_fi).unwrap_or_else(|error| {
         if error.kind() == ErrorKind::NotFound {
             File::create(&temp_fi).unwrap_or_else(|error| {
                 panic!("Problem creating the file: {:?}", error);
