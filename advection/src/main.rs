@@ -14,7 +14,8 @@ extern crate time;
 use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_macros::macro_lrls::{pt}};
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
-use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape};
+use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, 
+    op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files};
 use input_structure::{TaskType, TaskTypeCs, FileParametres, initial_information_of_advection, 
     advection_input, process_files, main_initialization, do_exact_solutions, main_cycle_first_order, main_cycle_with_correction};
 #[macro_use]
@@ -40,6 +41,7 @@ use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env,
 use time::{Duration};
 use chrono::{Duration as CDuration};
 use time::macros::date;
+use itertools::Itertools;
 use rand::{/*distributions::{Distribution, Uniform}, prelude::*, task_rng,*/ Rng, prelude::*};
 //Determine in cycle all provided for constants arguments, otherwise default.
 mod determine_my_impls{
@@ -59,6 +61,7 @@ mod modifications{
 pub const RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool = true;
 pub const TIME_OUTPUT: bool = true;
 pub const MY_TEX_PATH_FILE: bool = true;
+pub const ADDITION_OF_TIME_VECTORS: bool = true;
 pub const MAXIMUM_FILES_TO_EXPECT: usize = 6;
 pub const DIVIDE_ALL_STEPS_TO_PYTHON_PIC: usize = 11;
 pub const SIMPLE_STEP_TYPE: bool = true; //true - steps, false - all_steps
@@ -104,7 +107,7 @@ fn main() {//-----------------------------------------
     magenta!("App was done at {app_get:?}");
     let began_advection = SDuration::ZERO;
     let std_duration = SDuration::from_millis(0 as u64);
-    let start = std::time::Instant::now();
+    let advection_start = std::time::Instant::now();
     let from_cli = if MY_ARGUMENT_PARSING{
         //process it by myself
         advection_input()
@@ -116,11 +119,11 @@ fn main() {//-----------------------------------------
         //home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order/input-pstructures/src/advec_examples/TransferBurgerMccornack_iconditions0.txt
     //55.seconds() 
     };
-    let duration = start.elapsed();
+    let duration = advection_start.elapsed();
     let new_now  = std::time::Instant::now();
     std_duration.saturating_add(duration);
     if TIME_OUTPUT{
-        println!("App initialization: {:?} {duration:?}", new_now.duration_since(start));
+        println!("App initialization: {:?} {duration:?}", new_now.duration_since(advection_start));
     }
     let (mut argumento, mut my_config) = from_cli.unwrap();
 //-----------------------------------------
@@ -257,6 +260,7 @@ let debug_add = advection_modes.2.clone();
 /*Courant*/     let co = fiarg.n_corant;
 /*Ic*/          let i_parameters = fiarg.init_conditions;
 /*It*/          let i_type = fiarg.init_type;
+                let bound = fiarg.bound_type;
 /*Transfer_velocity*/let velocity_t = fiarg.add_args.0.clone();
 let time_decrease: f64 = 20.0;
 let switch_time = advection_modes.4;
@@ -323,7 +327,7 @@ let type_of_correction_program = true;
     let height = (time_ev.0 as f64 / dt as f64).ceil() as usize;
     let width = if SIMPLE_STEP_TYPE {steps} else { steps + 2_usize};
     let smooth_correction: bool = advection_modes.1;
-    let smooth_intensity = 0.1;
+    let smooth_intensity = 0.5;
     let left_domend = domain.0;
     let right_domend = domain.1;
     let alpha = i_parameters.1;
@@ -337,31 +341,37 @@ let type_of_correction_program = true;
         let mut dtotal_loop_nanos = dtotal_loop.num_nanoseconds().unwrap();
         let mut y_index: usize = 0;
         let mut x_index: usize = 0;
-        let mut only_one_check = Some(1_i8);
         let mut period: usize = 0;
         let mut output_periods: Vec<usize> = Vec::new();
         let all_steps = if SIMPLE_STEP_TYPE {steps} else { steps + 2_usize};  
 //REDUCE_TIME_TO_INT
-let print_npy = DIVIDE_ALL_STEPS_TO_PYTHON_PIC;
-let dir_to_graphics: PathBuf = calculation_data_path.join("datas");
-show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, fi, "This is the time after initializing shape", Some("the_beggining_shape"), deb_my);
-#[allow(unused_assignments)]
-    if switch_time {
-        //Loops made on real-time 
+    let print_npy = DIVIDE_ALL_STEPS_TO_PYTHON_PIC;
+    let dir_to_graphics: PathBuf = calculation_data_path.join("datas");
+    show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, fi, "This is the time after initializing shape", Some("the_beggining_shape"), deb_my);
+    if deb_my{
+        println!("{} {} {} {}", ansi_term::Colour::Yellow.underline().paint(format!("Switch time mode - ")), switch_time,
+            ansi_term::Colour::Yellow.underline().paint(format!("Correction time mode - ")), correction);
     }
-    else{
         //Loops dtermined by dt
         let mut processed_time_nanos = chrono::Duration::nanoseconds(0);
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
         let mut begin= Instant::now(); 
+        let mut new_now = std::time::Instant::now();
+        let mut cur_period: usize = 0;
         let mut curtime_on_vel = 0.0;            
         let mut fp_next: f64 = 0.0;
         let mut fp_prev: f64 = 0.0;
-        while approx_equal(current_time_on_dt - maxl_time_nanosecs as f64, 0.0, 3) {
+        let mut time_dif_in_nanos: f64 = maxl_time_nanosecs as f64;
+        let mut time_dif_in_secs: f64 = maxl_time_secs as f64;
+        println!("Approximate equal to 3 float digits? - {}", approx_equal(time_dif_in_secs, 0.0, 3));
+        'main_cycle: while !approx_equal(time_dif_in_secs, 0.0, 3) {
             if deb_my {
-                println!("{}",ansi_term::Colour::Yellow.underline().paint(format!("Rest time before loop: {}", time_ev.0 - current_time_on_dt)));
-                println!("all_steps: {}", all_steps);
+                println!("Approximate equal to 3 float digits? - {}", approx_equal(maxl_time_nanosecs as f64 - current_time_on_dt, 0.0, 3));
+                println!("{} and {}", ansi_term::Colour::Yellow.underline().paint(format!("Rest time before loop(nanosecs_to_float): {time_dif_in_nanos:6}")), 
+                ansi_term::Colour::Yellow.underline().paint(format!("While clause(secs): {}" , (maxl_time_secs as f64 - current_time_on_dt))));
+                println!("all_steps: {} ", all_steps);
             }
+            thread::sleep(SDuration::from_millis(200_u64));
             curtime_on_vel = current_time_on_dt * fuu;
             let mut x_next: f64;
 //++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -369,27 +379,65 @@ show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, 
 //------------------------------------------------------------------------------
 //Simply calculate second layer based on previous one
             if !correction{
-                main_cycle_first_order(&mut vprevious,&mut inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, a_positive, possgn_smax,
+                main_cycle_first_order(&mut vprevious,&mut inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, bound, a_positive, possgn_smax, 
                     all_steps, deb_my);
                 }
 //Otherwise  calculate  with correction
             else{
                 main_cycle_with_correction(&mut vprevious,&mut inner_vector,&mut prediction,&mut first_correction,&mut second_correction, 
-                    fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, 
+                    fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, bound,
                     all_steps, deb_my, type_of_correction_program, smooth_intensity);
             }
-        }
+            if ADDITION_OF_TIME_VECTORS{
 
+            }
+            else{
+
+            }
+            //swap them and delete old data
+            if deb_my{
+                let vprev_str = vprevious.iter().join("\t");//.iter().map(|s| ToString::from(s)).collect();
+                pt!("Upper and lower layers after cycle: ", "time");
+                pt!(vprev_str);
+            }
+            vprevious.clone_from_slice(&inner_vector);
+            inner_vector = vec![0.0; all_steps];
+            //Calculate time per cycle, remaining and other time
+            new_now = std::time::Instant::now();
+            let elapsed_in = begin.elapsed();
+            println!("\nMain calculation: {:?} < {:?}", elapsed_in, new_now.duration_since(begin));
+            time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
+            if switch_time {
+                //Loops made on real-time 
+                time_dif_in_secs = maxl_time_secs as f64 - elapsed_in.as_secs() as f64;
+                time_dif_in_nanos = (maxl_time_nanosecs as f64 - elapsed_in.as_nanos() as f64 )/ 1000_000_000_f64;
+            }
+            else{
+            time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
+            time_dif_in_secs = maxl_time_secs as f64 - current_time_on_dt;
+            println!("dt- {}", dt);
+            }
+            current_time_on_dt += dt;// move up
+            y_index += 1;// output time 
+            cur_period += 1;
+            //Measure real-time from procesing programm
+            processed_time_nanos = processed_time_nanos.checked_add(&chrono::Duration::from_std(new_now - begin).unwrap()).unwrap();
+            println!("{} ^ {}", processed_time_nanos, maxl_time_secs as f64 - elapsed_in.as_secs() as f64 * cur_period as f64);
+            println!("{}", ansi_term::Colour::Yellow.underline().paint(format!("Real-time elapsed: {processed_time_nanos:6?}")));
+            if vprevious.iter().all(|&v| approx_equal(v, 0.0, 3)){
+                warn!("Main cycle has been broken before designated time!-cause all numeric elements equal to zero with 3 digit precision");
+                break 'main_cycle;
+            }
         }
+        let animation_path = env::current_dir().unwrap().join("src").join("animation");
+        let calculation_anim_path = animation_path.join("datas");
+        let t_maxx = if equation ==0 {None} else {Some(t_max)}; //&vector_time, &vector_time_exact,
+        show_shape(all_steps, print_npy, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
+        save_files(&calculation_anim_path,  vprevious, Some(inner_vector), (all_steps, Some(left_domend), Some(right_domend), t_maxx), Some(print_npy), fi, Some(output_periods),
+            Some(false), Some(true));
     });
+    println!("Programm had been finished at: {:?}", new_now.duration_since(advection_start));
 }
-
-
-/*
-    let possible_error = FileParametresBuilder::default()
-        .eq_type(0).time_eval_period_stage((0_f64 , 10_f64, Some(false)))
-        .build().unwrap_err();
-    println!("\n{}", &possible_error.to_string());*/
 /* 
 extern crate once_cell;
 extern crate log4rs;
