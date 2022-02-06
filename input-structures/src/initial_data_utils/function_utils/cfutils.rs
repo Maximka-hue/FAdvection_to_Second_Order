@@ -8,8 +8,10 @@ extern crate path_clean;
 use handle::Handle;
 use log::info;
 use path_clean::PathClean;
-use std::{thread, io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write},
-    path::{Path, PathBuf},{time::{ Duration}}, fs::{self, OpenOptions, File}, env};
+use csv::Writer;
+use std::{thread, cmp, str::FromStr, 
+    io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write},
+    path::{Path, PathBuf}, {time::{ Duration}}, fs::{self, OpenOptions, File}, env};
 use named_tuple::named_tuple;
 //use std::path::{Path, PathBuf};
 extern crate custom_error;
@@ -250,8 +252,10 @@ pub fn create_output_dir(mut fnum: usize, num_files: usize, should_sleep: bool, 
     });
     println!("This will be writen later ... \n{:?} ", processed_params );
     if should_sleep{
-        thread::sleep(Duration::from_secs(1_u64));}
-    let bu = PathBuf::from("src\\unchecked.txt");
+        thread::sleep(Duration::from_secs(1_u64));
+    }
+    //This determine that file amount greater than fnum.
+    let bu = PathBuf::from("src\\fi_greater_fnum.txt");
     let next_pathbuf= if fnum < num_files {parameter_file} else {bu};
     let next_str = next_pathbuf.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
     Ok((fnum, next_pathbuf, next_str, processed_params))
@@ -470,29 +474,28 @@ pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactve
                 calculation_path: &PathBuf, nf: usize, desc: &str, time_form: Option<&str>, deb_my: bool){
     //Will be less than (print_npy - 1) * step_by_step
         let step_by_step = (all_steps  as f64 /print_npy as f64).floor() as usize;
-        let mut next_vec_index = 0_usize;
-        println!("X, U, U_exact ");
+        let mut next_vec_index: usize;
+        println!("X, U, U_exact");
         let end = print_npy * step_by_step - 1_usize;
             for k in 0..print_npy {
                 next_vec_index = k * step_by_step; 
                 if deb_my{
-                    println!("{}  , {:^.5}, {:^.5}", next_vec_index as f32, numvec[next_vec_index], exactvec[next_vec_index]);
+                    println!("{}, {:^.5}, {:^.5}", next_vec_index, numvec[next_vec_index], exactvec[next_vec_index]);
                 }
             }
-            info!("{}  , {:^.5}, {:^.5}", all_steps as f32, numvec[end], exactvec[end]);
-            let pic_path = &calculation_path.join(format!(r"pic_shapes_file_num{}_{}.txt", nf, time_form.unwrap_or("")));
-            let mut pic_file = OpenOptions::new()
-                .write(true).create(true).open(&pic_path).expect("cannot open file");
-            for k in 0..print_npy {
-                pic_file.write_all(format!("{} , {:^.5}, {:^.5}
-                    ",k as f64, numvec[k], exactvec[k]).as_bytes()).unwrap();
-            }
-            pic_file.write_all(format!("{} , {:^.5}, {:^.5} \n
-                ",end as f64 - 1_f64, numvec[end], exactvec[end]).as_bytes()).unwrap();
-            pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
+        info!("All_steps: {}, {:^.5}, {:^.5}", all_steps, numvec[end], exactvec[end]);
+        let pic_path = &calculation_path.join(format!(r"pic_shapes_file_num{}_{}.txt", nf, time_form.unwrap_or("")));
+        let mut pic_file = OpenOptions::new()
+            .write(true).create(true).open(&pic_path).expect("cannot open file");
+        for k in 0..print_npy {
+            next_vec_index = k * step_by_step;
+            pic_file.write_all(format!("{} , {:^.5}, {:^.5}\n",
+            next_vec_index, numvec[next_vec_index], exactvec[next_vec_index]).as_bytes()).unwrap();
+        }
+        pic_file.write_all(format!("End: {} , {:^.5}, {:^.5}\n", end, numvec[end], exactvec[end]).as_bytes()).unwrap();
+        pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
             }
 
-use std::str::FromStr;
 ///These functions search delimeters [first from book Jim Blandy and latter my improved version]
 //Ищем несколько разделителей
 pub fn parse_pair<T: FromStr>(s : &str, separator :char) -> Option<(T,T)>{
@@ -528,6 +531,33 @@ pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
         }
         }
     }
+}
+fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right, t_max): (usize, Option<f64>, Option<f64>, Option<f64>), 
+    elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>) -> std::io::Result<()>{
+        let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
+        const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
+        let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
+            elements_per_raw
+        }
+        else{
+            DEFAULT_ELEMENTS_PER_RAW
+        };
+        let mut string_raw: String;
+        let left = left.unwrap_or(0.0);
+        let right = right.unwrap_or(0.0);
+        let distance = right - left;
+        let h_fl: f64 = steps as f64/raw_size as f64; 
+        let h = (steps/raw_size) as usize;
+        println!("{} ^ {} = {}",h_fl, h, h_fl - h as f64);
+        let mut next_index: usize;
+        let mut x_next: f64;
+        let mut on_line: usize;
+        println!("directory specified {:?} paraview_format: {:?}" , dir, paraview_format);
+        let pypath = dir.join(format!(r"\{}", dir.display())).join(format!("to_python_{}.txt", nf));
+        let expypath = dir.join(format!(r"\{}", dir.display())).join(format!("exact_to_python_{}.txt", nf));
+        let parameters_path = dir.join(format!(r"\{}", dir.display())).join(format!("parameters_{}.txt", nf));
+        println!("{:#?}", format!("PyPaths for graphics: \n{:?} ^ \n{:?} ^ \n{?}", pypath, expypath, parameters_path));
+        Ok(())
 }
 //________________________Additional+++++++++++++++++++++++++++++++++++++
 pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
