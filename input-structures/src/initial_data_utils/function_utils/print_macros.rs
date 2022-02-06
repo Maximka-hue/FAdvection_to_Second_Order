@@ -215,29 +215,30 @@ where S: Into<Cow<'a, str>> + Debug {
     if let Some(text_vector) = textv{
         for (i,s) in text_vector.iter().enumerate(){
         // prints the text in rainbow colors
-            print!("{}", rainbowify(&format!("{:?} \t", s)));
-            const MAX_TEXT_IN_RAW:u32 =11;
-            const MIN_TEXT_IN_RAW:u32 = 3;
-            if let Some(raw_skip) = data_in_row{
-                if let MIN_TEXT_IN_RAW..= MAX_TEXT_IN_RAW = raw_skip{
+          print!("{}", rainbowify(&format!("{:?} \t", s)));
+          const MAX_TEXT_IN_RAW:u32 =11;
+          const MIN_TEXT_IN_RAW:u32 = 3;
+          if let Some(raw_skip) = data_in_row{
+               if let MIN_TEXT_IN_RAW..= MAX_TEXT_IN_RAW = raw_skip{
                     if i % raw_skip as usize ==0 {print!("\n");}
-                }
+               }
             else{
                 if i % 2 as usize ==0 {print!("\n");}
             }
         }
     }
 }
-let colour_style = define_colour_style(&context.to_lowercase(), None);//.expect("extracting color style in pt macro");
-if PRINTFUNC_DBGOUT {println!("{:?}", colour_style);}
-let local_time = Local::now();
-if context.contains("time") || context.contains("dbg") || context.contains("debug"){
-     green!("Local time: ");
-     let ggg = ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(221)).fg(ansi_term::Colour::Fixed(124)).paint(format!("\n\t\t{ }\n", local_time));
-     println!("{:?}", ggg); 
+     let colour_style = define_colour_style(&context.to_lowercase(), None);//.expect("extracting color style in pt macro");
+     if PRINTFUNC_DBGOUT {
+          println!("{:?}", colour_style);}
+     let local_time = Local::now();
+     if context.contains("time") || context.contains("dbg") || context.contains("debug"){
+          green!("Local time: ");
+          let loc_time_now = ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(221)).fg(ansi_term::Colour::Fixed(124)).paint(format!("\n\t\t{ }\n", local_time));
+          println!("{:#?}", loc_time_now); 
      }
-     green!("{} {}", &text.into(), termcolor::Fg(termcolor::Reset));
-     }
+     green!("{} {}", termcolor::Fg(termcolor::Blue), &text.into());
+}
 
 pub fn generate_random_parameters(floating_point_numbers: Option<u8>, integer_numbers: Option<u8>) -> Result<(Vec<i8>, Vec<f64>), ()>{
           let mut float_values = Vec::<f64>::with_capacity(10);
