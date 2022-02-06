@@ -141,6 +141,7 @@ fn define_colour_style(context: &str, desired_colour: Option<PrintStyle>) -> Pri
      colour
 }
 fn define_my_colour_style(context: &str, desired_colour: Option<(&str, &str)>) -> (ForegroundColor, BackgroundColor) {
+     use log::info;
      let mut colour = (ForegroundColor::Default, BackgroundColor::Default);
      if context.contains("t") || context.contains("time"){
           if PRINTFUNC_DBGOUT {println!("Colour for time will be green on yellow: ");}
@@ -159,7 +160,7 @@ fn define_my_colour_style(context: &str, desired_colour: Option<(&str, &str)>) -
           colour = (ForegroundColor::Green, BackgroundColor::Cyan);
      }
      else{
-          colour = (ForegroundColor::Default, BackgroundColor::Default);
+          info!("[Color will be default: {:?}]", colour);
      }
      colour
 }
@@ -218,16 +219,16 @@ where S: Into<Cow<'a, str>> + Debug {
           print!("{}", rainbowify(&format!("{:?} \t", s)));
           const MAX_TEXT_IN_RAW:u32 =11;
           const MIN_TEXT_IN_RAW:u32 = 3;
-          if let Some(raw_skip) = data_in_row{
-               if let MIN_TEXT_IN_RAW..= MAX_TEXT_IN_RAW = raw_skip{
-                    if i % raw_skip as usize ==0 {print!("\n");}
+               if let Some(raw_skip) = data_in_row{
+                    if let MIN_TEXT_IN_RAW..= MAX_TEXT_IN_RAW = raw_skip{
+                         if i % raw_skip as usize ==0 {print!("\n");}
+                    }
+                    else{
+                         if i % 2 as usize ==0 {print!("\n");}
+                    }
                }
-            else{
-                if i % 2 as usize ==0 {print!("\n");}
-            }
-        }
-    }
-}
+          }
+     }
      let colour_style = define_colour_style(&context.to_lowercase(), None);//.expect("extracting color style in pt macro");
      if PRINTFUNC_DBGOUT {
           println!("{:?}", colour_style);}
@@ -235,7 +236,7 @@ where S: Into<Cow<'a, str>> + Debug {
      if context.contains("time") || context.contains("dbg") || context.contains("debug"){
           green!("Local time: ");
           let loc_time_now = ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(221)).fg(ansi_term::Colour::Fixed(124)).paint(format!("\n\t\t{ }\n", local_time));
-          println!("{:#?}", loc_time_now); 
+          println!("{}", loc_time_now); 
      }
      green!("{} {}", termcolor::Fg(termcolor::Blue), &text.into());
 }
