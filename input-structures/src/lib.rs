@@ -22,7 +22,7 @@ use rayon::prelude::*;
 use tutil::crayon::Style;
 use tutil::crayon::Color::*;
 extern crate rand;
-use rand::{prelude::*, Rng, SeedableRng};
+use rand::{prelude::*};
 pub use structopt::StructOpt;
 use clap::{ ColorChoice, Arg, ArgGroup, App};
 use clap::{app_from_crate, arg, crate_name};
@@ -83,7 +83,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
     .about("Does awesome things")
     .arg(Arg::new("SWITCH_TIME")
         .short('s')
-        .default_value("false")
+        //.default_value("false")
         .long("switch_time")
         .help("Sets option for taking real-time or dt on every iteration in main.rs"))
     //This will determine from crate log output enable/disable
@@ -364,7 +364,7 @@ Boundary type: {data5}  {sep}
 Initial type: {data6}  {sep}  
 Initial conditions: {data7:?} {sep} 
 Quantity split nodes: {data8:?} {sep} 
-Courant number: {data9}  \nThis file was {fnum} with path {new_buf:?}",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
+Courant number: {data9}  \n\nThis file was {fnum} with path \n{new_buf:?}",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
             data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
             data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = ',')).as_bytes());
             if additional_print{
@@ -719,7 +719,8 @@ let smax: f64 = match equation{
 (first_ex , second_ex , temporary, vprevious, inner_vector, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
 }
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, dt: f64, dx: f64, equation: i8, a_positive: bool, possgn_smax: bool,
+pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, dt: f64, dx: f64,
+        equation: i8, bound: i8, a_positive: bool, possgn_smax: bool,
         all_steps: usize, debug_init: bool){
 //This case will pass when f<0
     if (!a_positive && equation==0) || (!possgn_smax && equation==1){//f<0
@@ -753,9 +754,27 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
     else if (fuu == 0.0 && equation==0) || (equation == 1) {
         std::panic!("{}", &format!("{}", "This mustn'be the case!".on_truecolor(135, 28, 167))[..]);
     }
+    //Then set Boundary conditions
+    if bound == 0 //   non-reflective condition
+    {
+        inner_vector[0]= inner_vector[1];
+        if debug_init{
+            println!("Boundary condition established: {}, on dx {} with dt {}", inner_vector[1] == inner_vector[0], dx, dt);
+        }
+    }
+    else 
+    {inner_vector[0] = inner_vector[all_steps-2];
+        if debug_init{
+            println!("Bound condition established: {}...{}...{}", inner_vector[0] == inner_vector[all_steps-2], dx, dt);
+        }
+    }  
+    if bound == 0 
+        {inner_vector[all_steps-1]= inner_vector[all_steps-2];}//      v[n]= v[n-1]
+    else
+        {inner_vector[all_steps-1] = inner_vector[1];}
 }
 pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, prediction: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
-        fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, all_steps: usize, debug_init: bool,
+        fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, bound: i8, all_steps: usize, debug_init: bool,
             type_of_correction_program: bool, smooth_intensity: f64) {
     for k in 0..all_steps-1 {// from second to prelast
 //First intermidiate future step
@@ -797,6 +816,24 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
             info!("{}", format!("{} element: with value {}", k, inner_vector[k]));
         }
     }
+    //Then set Boundary conditions
+        if bound == 0 //   non-reflective condition
+        {
+            inner_vector[0]= inner_vector[1];
+            if debug_init{
+                println!("Boundary condition established: {}, on dx {} with dt {}", inner_vector[1] == inner_vector[0], dx, dt);
+            }
+        }
+        else 
+        {inner_vector[0] = inner_vector[all_steps-2];
+            if debug_init{
+                println!("Bound condition established: {}...{}...{}", inner_vector[0] == inner_vector[all_steps-2], dx, dt);
+            }
+        }  
+        if bound == 0 
+            {inner_vector[all_steps-1]= inner_vector[all_steps-2];}//      v[n]= v[n-1]
+        else
+            {inner_vector[all_steps-1] = inner_vector[1];}
 }
 
 pub fn monotization_rs(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
@@ -835,7 +872,7 @@ pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, 
     let mut l: f64;
     let mut l_new: usize;
     //let mut h = (all_steps as f64/ print_npy as f64).floor() as usize;
-    for k in 0 .. all_steps{
+    for k in 0 .. all_steps {
         if equation ==0 {
             l =  k as f64 - curtime_on_vel;
             if deb_my { 
@@ -851,7 +888,7 @@ pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, 
                 second_ex[k] = first_ex[l_new].clone();
             }
         }
-        else if equation ==1 {
+        else if equation == 1 {
             //This will work **Only** with lines initial forms
             first_ex[k]= (alpha * k as f64 + c)/
                     (alpha * curtime_on_vel + 1.0);
