@@ -121,6 +121,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
     .arg(Arg::new("from-directory")
         .long("dir-path") 
         .takes_value(true)
+        .max_values(1)
         //.required_unless_present("path-to-files")
     )
     .group(ArgGroup::new("output-style")
@@ -174,14 +175,23 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
     }
     let mut files_str: Vec<String> = Vec::new();
     let mut files_buf: Vec<PathBuf> = Vec::new();
+    let mut directory_to_files = PathBuf::new();
+    let examples_from_file: PathBuf = PathBuf::new();
     if outcli {
-        // we can safely unwrap as the argument is required in case of cli-files
+// we can safely unwrap as the argument is required in case of cli-files
     files_str = clap_arguments.values_of("path-to-files").clone().unwrap().map(|strs| String::from(strs)).collect::<Vec<String>>();
     files_buf = files_str.clone().into_iter().map(|strin| Path::new(&strin[..]).to_path_buf()).collect();
     println!("{}", "Files collected from terminal: ".italic().yellow());
     for fi in &files_str{
         println!("{}", fi);
         }
+    }
+    else if from_directory{
+        directory_to_files = PathBuf::from(clap_arguments.values_of("from-directory").unwrap().next().unwrap_or(""));
+    }
+    else if from_files{
+        let examples_from_file = PathBuf::from(clap_arguments.value_of("in-file").unwrap());
+        files_str = extract_example_names(examples_from_file);
     }
     let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
     let amf: usize = parse_positive_int(amf)? as usize;
@@ -199,9 +209,9 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
         };
     let my_config = if from_files || from_directory {
         let new_patbuf_vec = Vec::<PathBuf>::new();
-        let directory_to_files = clap_arguments.value_of("dir-to-files").unwrap();
+       
         MyConfiguration {//this variable suitable for both[from language point]
-            search_path: Some(PathBuf::from(directory_to_files)),
+            search_path: Some(directory_to_files),
             searched_files: new_patbuf_vec,
             debug: debug,
             amf: amf,
@@ -209,8 +219,9 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
             out_style: out_style_from_cli,
             switch_time,
             task_type,
-    }} else{MyConfiguration {//this variable suitable for both[from language point]
-        search_path: None,
+    }} else{
+        MyConfiguration {//this variable suitable for both[from language point]
+        search_path: Some(examples_from_file),
         searched_files: files_buf,
         debug: debug,
         amf: amf,
@@ -223,6 +234,7 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
     return Ok((argumento, my_config))
     
 }
+
 #[derive(Default, Debug, PartialEq)]
 pub struct MyConfiguration {
     // Option defaults to None, directory in which search files.
@@ -268,7 +280,10 @@ impl MyConfiguration {
         (self.debug, self.correction, self.out_style , self.amf, self.switch_time, self.task_type.clone())
     }
 }
-
+fn extract_example_names(f_path: PathBuf) -> Vec<String> {
+    //TODO extract example names or paths to them
+    Vec::<String>::new()
+}
 mod strct_opt_impl{
     use super::{StructOpt, PathBuf};
     //___________________________________________________________________________________________________
