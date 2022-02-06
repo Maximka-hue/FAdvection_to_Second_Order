@@ -92,7 +92,6 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
         //.min_values(1)
         .help("Sets the level of debugging information"))
     .arg(Arg::new("CORRECTION")
-        .short('c')
         .long("correction")
         .required(false)
         .help("Sets the input file to use"))
@@ -776,7 +775,7 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
 pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, prediction: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
         fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, bound: i8, all_steps: usize, debug_init: bool,
             type_of_correction_program: bool, smooth_intensity: f64) {
-    for k in 0..all_steps-1 {// from second to prelast
+    for k in 1..all_steps-1 {// from second(cause of overflow in prediction[k-1]) to prelast
 //First intermidiate future step
         fu_next = match equation{
             0=> fuu * vprevious[k+1] as f64,
@@ -787,6 +786,7 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
             1=> vprevious[k].powi(2)/ 2.0,
             _ =>  0.0};
         prediction[k] =  vprevious[k] - (dt/dx)*(fu_next - fu_prev); 
+        println!("{}", prediction[k]);
         //*prediction = *prediction.wrapping_offset(step);
 //Then last backward propagation
         fp_next =  match equation {
