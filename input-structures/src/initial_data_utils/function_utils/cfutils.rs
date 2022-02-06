@@ -511,6 +511,7 @@ fn create_safe_file_with_options(path: PathBuf) -> Result<std::fs::File, std::io
 }
 pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right, t_max): (usize, Option<f64>, Option<f64>, Option<f64>), 
     elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>) -> std::io::Result<()>{
+//Define variables +++++++++++++++++++++++++++++++++++++++++++++++
         let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
         const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
         let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
@@ -540,15 +541,41 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
             create_safe_file_with_options(expypath)?;
             exact_vector= ex;
         }
-//This will create csv like txt files to turn them in paraview window
+//This will create csv like txt files to turn them in paraview window ------------------------------------
         if paraview_format.unwrap_or(false){
-            let switch_path = dir.join("paraview_datas");
+            let mut switch_path = dir.join("paraview_datas");
             println!("quantity parts size: {}\n paraview path: {:?}\n Is it directory? {}", raw_size, switch_path, switch_path.is_dir());
             fs::create_dir_all(switch_path)?;
+            let end_of_traverse_exact = tvector.len() as f64/raw_size  as f64;
+            let end_of_traverse = (tvector.len() as f64 / raw_size  as f64).floor() as usize;
+            println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
+            for y_index in 0.. end_of_traverse{
+                //Check that vector doesn't contain all zeros
+                if tvector[y_index..y_index+(raw_size-1) as usize].iter().all(|&v| !approx_equal(v, 0.0, 3)){
+                    switch_path = switch_path.join(format!("x_u_w_{1}_{2}.txt", nf, y_index));
+                    let mut my_file = create_safe_file_with_options(&switch_path[..])?;//superfluously
+                    my_file.write_all("x,exv,numv\n".as_bytes())?;
+                    for k in 0..raw_size {
+                        on_line = h*k;
+                        x_next = left + on_line as f64;
+                        next_index = k + y_index * raw_size;
+                        string_raw = format!(r"{},{},{}",
+                            x_next, exact_vector[next_index], tvector[next_index]);
+                        my_file.write_all(&string_raw[..].as_bytes())?;
+                    }
+                    if y_index != end_of_traverse-1{
+                        string_raw = format!(r"{},{},{}", 
+                            steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size]);
+                        my_file.write_all(&string_raw[..].as_bytes())?;
+                    }
+                    else{
+                        string_raw = format!(r"{},{},{}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1]);
+                        my_file.write_all(&string_raw[..].as_bytes())?;
+                    }
+                }
+            }
         }
-        let end_of_traverse_exact = tvector.len() as f64/raw_size  as f64;
-        let end_of_traverse = (tvector.len() as f64/raw_size  as f64).floor() as usize;
-        println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
+//Else I can pass it into csv format
         Ok(())
 }
 //________________________Additional+++++++++++++++++++++++++++++++++++++
