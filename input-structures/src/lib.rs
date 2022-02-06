@@ -638,10 +638,40 @@ let smax: f64 = match equation{
             info!("Max value in array with gauss wave: {}", maxvalue);
                 println!("MAXIMUM VALUE: {}", maxvalue);
             },
+            3 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение переноса")));
+            //if start.clamp(f32::MIN, f32::MAX)==start && end.clamp(f32::MIN, f32::MAX)== end{
+                let distance= end_right - start_left;
+                let mut angle: f64;
+                const DOUBLE_PI: f32 = 2.0 * std::f64::consts::PI;
+                for n in  0..steps {
+                    x_next = start_left + n as f64 * dx;
+                    angle = x_next as f64 * DOUBLE_PI / distance;
+                    vprevious[n] = angle.sin();
+                    info!("Sinusoid: Step: {} - Value: {} ", n , vprevious[n as usize]);
+                }
+                first_ex[..].copy_from_slice(&vprevious[..]);
+            //else{panic!("Too extensive domain!");}
+            },
+            4 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение переноса")));
+            let alpha = centre.clone();//For clarity
+            let c = width.clone();
+            all_steps = steps;
+            vprevious.resize(all_steps, 0.0);
+            first_ex.resize(all_steps, 0.0);
+            second_ex.resize(all_steps, 0.0);
+            inner_vector.resize(all_steps, 0.0);
+                for n in  0..all_steps {
+                    x_next = start_left + n as f64 * dx;
+                    vprevious[n] = x_next * alpha + c;
+                    info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
+                }
+                first_ex.copy_from_slice(&vprevious[..]);
+                //}
+            },
             other => {println!("Options of initial conditions can be only 0...4! found {}", other)
             },
              // Anyway we return a velocity in TRANSFER: it's constant
-        };
+        };//First check
         veloc}
     1=> {
         let start = ((centre - (width / 2.0) as f64) / dx) as usize;
@@ -726,6 +756,40 @@ let smax: f64 = match equation{
             }
         };
         fsmax}, 
+        3 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение Burger")));
+            let distance= end_right - start_left;
+            let mut angle: f32;
+            let mut x_next;
+            const DOUBLE_PI: f64 = 2.0 * std::f64::consts::PI;
+            for n in  0..all_steps {
+                x_next = start + n as f64 * dx;
+                angle = x_next as f64 * DOUBLE_PI / distance;
+                vprevious[n] = angle.sin();
+                info!("Sinusoid: Step: {} - Value: {} ", n , vprevious[n as usize]);
+            }
+            first_ex[..].copy_from_slice(&vprevious[..]);
+            let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
+            info!("Max value in array with sinusoid: {}", maxvalue);
+            println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
+                                    maxvalue},
+            4 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение Бюргерсса")));
+            let alpha = centre.clone();//For clarity
+            let c = width.clone();
+            all_steps = steps;
+            vprevious.resize(all_steps, 0.0);
+            first_ex.resize(all_steps, 0.0);
+            second_ex.resize(all_steps, 0.0);
+            inner_vector.resize(all_steps, 0.0);
+            for n in  0..all_steps {
+                x_next = start + n as f64 * dx;
+                vprevious[n] = x_next * alpha + c;
+                info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
+            }
+            first_ex.copy_from_slice(&vprevious[..]);
+            let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
+            info!("Max value in array with lines: {}", maxvalue);
+            println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
+                                        maxvalue},
     _ => panic!("Initial equation condition incorrect") 
     };
     let new_now = std::time::Instant::now();
