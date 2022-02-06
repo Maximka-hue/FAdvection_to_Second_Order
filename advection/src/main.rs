@@ -206,8 +206,17 @@ fn main() {//-----------------------------------------
 //2 from txt files which *will be from input path getted *collected from command line *from file[their paths].
 // **Command line can be processed by hand-made parser into struct Argumento or with clap
     let mut file_paths_with_examples = my_config.get_files();
+    let is_there_some_files = file_paths_with_examples.len()!= 0_usize;
     let advection_modes = my_config.get_advection_modes();
     println!("{:?} - {advection_modes:?}", file_paths_with_examples);
+    let mut dir_to_search: PathBuf = my_config.get_directory_with_files();
+    let dir_not_empty = dir_to_search.read_dir().map(|mut i| i.next().is_none()).unwrap_or(false);
+    dir_to_search = if dir_not_empty && is_there_some_files {
+        fs::canonicalize(dir_to_search).unwrap()
+    }
+    else{
+        input_fpath.clone()
+    };
     if GENERATE_RANDOM_EXAMPLE {    
         parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY);
         //Ok((String::new()))
@@ -215,7 +224,7 @@ fn main() {//-----------------------------------------
     else if !advection_modes.2{//out_style
         //Get txt with datas
         if GET_FILES_FROM_DIRECTORY{
-            let txt_files = traverse_not_hidden_files(PATH_DEBUG_INFO, MAXIMUM_FILES_TO_EXPECT, &input_fpath);
+            let txt_files = traverse_not_hidden_files(PATH_DEBUG_INFO, MAXIMUM_FILES_TO_EXPECT, &dir_to_search);
             let tex_file_path = advection_path.join("OutputFiles").join("RUSTadvection.tex");
             let mut tex_file = OpenOptions::new()
                 .write(true).open(tex_file_path).expect("Writing to tex");
@@ -236,14 +245,14 @@ let mut file_parameters_from_cli = (Vec::<FileParametres>::new(), Vec::<String>:
 let calculation_path_as_string = calculation_path.into_os_string().into_string().unwrap();
 let deb_my = advection_modes.2;
 let correction = advection_modes.1;
-if deb_my{
+if deb_my {
     file_parameters_from_cli = process_files(&mut file_paths_with_examples, Some(advection_modes.3), 
         Some(advection_modes.0), Some(LETS_DO_PAUSE), Some(calculation_path_as_string)).unwrap();
 }
-
 let calculation_path_as_str = &animation_path.join("datas").into_os_string().into_string().unwrap()[..];
 let number_of_files_with_data = file_parameters_from_cli.1.len();
 let debug_add = advection_modes.2.clone();
+//Begin main calculations
 (file_parameters_from_cli.0, file_parameters_from_cli.1).into_par_iter().zip((0..number_of_files_with_data).into_iter()).for_each(|(data, fi)| {
     let mut my_time_counter = ChooseSleepTime::add_default_time();
     let concrete_digits_data = data.0;
