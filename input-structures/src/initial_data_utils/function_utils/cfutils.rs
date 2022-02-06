@@ -496,6 +496,73 @@ pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactve
         pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
             }
 
+fn create_safe_file_with_options(path: PathBuf) -> Result<std::fs::File, std::io::Error>{
+    let file = OpenOptions::new().write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
+        if error.kind() == ErrorKind::NotFound {
+            File::create(&path).unwrap_or_else(|error| {
+                panic!("Problem creating the file: {:?}", error);
+            })
+        } 
+        else {
+            panic!("Problem opening the file: {:?}", error);
+        }
+        });
+    Ok(file)
+}
+pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right, t_max): (usize, Option<f64>, Option<f64>, Option<f64>), 
+    elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>) -> std::io::Result<()>{
+        let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
+        const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
+        let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
+            elements_per_raw
+        }
+        else{
+            DEFAULT_ELEMENTS_PER_RAW
+        };
+        let mut string_raw: String;
+        let left = left.unwrap_or(0.0);
+        let right = right.unwrap_or(0.0);
+        let distance = right - left;
+        let h_fl: f64 = steps as f64/raw_size as f64; 
+        let h = (steps/raw_size) as usize;
+        println!("h_fl - h: {} ^ {} = {}",h_fl, h, h_fl - h as f64);
+        let mut next_index: usize;
+        let mut x_next: f64;
+        let mut on_line: usize;
+        println!("directory specified {:?} paraview_format: {:?}" , dir, paraview_format);
+        let pypath = dir.join(format!("to_python_{}.txt", nf));//.join(format!(r"\{}", dir.display()))
+        let expypath = dir.join(format!("exact_to_python_{}.txt", nf));
+        let parameters_path = dir.join(format!("parameters_{}.txt", nf));
+        println!("{:?}  ^ {:?} ^ \n{:?}", format!("PyPaths for graphics: \n{:?}", pypath), expypath, parameters_path);
+        let mut exact_vector: Vec<f64> = Vec::with_capacity(tvector.len()+1);
+        let py_path = create_safe_file_with_options(pypath)?;
+        if let Some(ex) = wvector{
+            create_safe_file_with_options(expypath)?;
+            exact_vector= ex;
+        }
+//This will create csv like txt files to turn them in paraview window
+        if paraview_format.unwrap_or(false){
+            let switch_path = dir.join("paraview_datas");
+            println!("quantity parts size: {}\n paraview path: {:?}\n Is it directory? {}", raw_size, switch_path, switch_path.is_dir());
+            fs::create_dir_all(switch_path)?;
+        }
+        let end_of_traverse_exact = tvector.len() as f64/raw_size  as f64;
+        let end_of_traverse = (tvector.len() as f64/raw_size  as f64).floor() as usize;
+        println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
+        Ok(())
+}
+//________________________Additional+++++++++++++++++++++++++++++++++++++
+pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    let path = path.as_ref();
+
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    }.clean();
+
+    Ok(absolute_path)
+}
 ///These functions search delimeters [first from book Jim Blandy and latter my improved version]
 //Ищем несколько разделителей
 pub fn parse_pair<T: FromStr>(s : &str, separator :char) -> Option<(T,T)>{
@@ -532,46 +599,6 @@ pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
         }
     }
 }
-fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right, t_max): (usize, Option<f64>, Option<f64>, Option<f64>), 
-    elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>) -> std::io::Result<()>{
-        let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
-        const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
-        let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
-            elements_per_raw
-        }
-        else{
-            DEFAULT_ELEMENTS_PER_RAW
-        };
-        let mut string_raw: String;
-        let left = left.unwrap_or(0.0);
-        let right = right.unwrap_or(0.0);
-        let distance = right - left;
-        let h_fl: f64 = steps as f64/raw_size as f64; 
-        let h = (steps/raw_size) as usize;
-        println!("{} ^ {} = {}",h_fl, h, h_fl - h as f64);
-        let mut next_index: usize;
-        let mut x_next: f64;
-        let mut on_line: usize;
-        println!("directory specified {:?} paraview_format: {:?}" , dir, paraview_format);
-        let pypath = dir.join(format!(r"\{}", dir.display())).join(format!("to_python_{}.txt", nf));
-        let expypath = dir.join(format!(r"\{}", dir.display())).join(format!("exact_to_python_{}.txt", nf));
-        let parameters_path = dir.join(format!(r"\{}", dir.display())).join(format!("parameters_{}.txt", nf));
-        println!("{:#?}", format!("PyPaths for graphics: \n{:?} ^ \n{:?} ^ \n{?}", pypath, expypath, parameters_path));
-        Ok(())
-}
-//________________________Additional+++++++++++++++++++++++++++++++++++++
-pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
-    let path = path.as_ref();
-
-    let absolute_path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        env::current_dir()?.join(path)
-    }.clean();
-
-    Ok(absolute_path)
-}
-
 /*
 fn wf(_path: Option<&Path>) -> Result<(), Error> {
     let current_dir = env::current_dir()?;
