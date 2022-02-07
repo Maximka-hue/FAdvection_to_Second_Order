@@ -511,7 +511,14 @@ fn create_safe_file_with_options(path: PathBuf) -> Result<std::fs::File, std::io
     Ok(file)
 }
 pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right): (usize, Option<f64>, Option<f64>), 
-    elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>) -> std::io::Result<()>{
+    elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>, my_deb: Option<bool>) 
+    -> std::io::Result<()>{
+        let my_deb = if let Some(debug) = my_deb{
+            debug
+        }
+        else{
+            false
+        };
 //Define variables +++++++++++++++++++++++++++++++++++++++++++++++
         let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
         let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
@@ -549,27 +556,36 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
             let end_of_traverse_exact = tvector.len() as f64/raw_size  as f64;
             let end_of_traverse = (tvector.len() as f64 / raw_size  as f64).floor() as usize;
             println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
-            for y_index in 0.. end_of_traverse{
+            for y_index in 0.. end_of_traverse {
                 //Check that vector doesn't contain all zeros
-                if tvector[y_index..y_index+(raw_size-1) as usize].iter().all(|&v| !approx_equal(v, 0.0, 3)){
+                //println!("{:?} \n {:?}\n^", tvector, exact_vector);
+                if my_deb{
+                    println!("y_index {}, Condition on write, Any of elements!=0: {}",
+                    y_index, tvector[y_index..y_index+(raw_size-1) as usize].iter().any(|&v| !approx_equal(v, 0.0, 3)));
+                }
+                if tvector[y_index..y_index+(raw_size-1) as usize].iter().any(|&v| !approx_equal(v, 0.0, 3)){
                     let switch_path = dir.join("paraview_datas").join(format!("x_u_w_{0}_{1}.txt", nf, y_index));
+                    if my_deb{
+                        println!("switch_path_x_u_w : {:?}", switch_path);
+                    }
                     let mut paraview_file = create_safe_file_with_options(switch_path)?;//superfluously
-                    paraview_file.write_all("x,exv,numv\n".as_bytes())?;
+                    println!("{:?}" , paraview_file);
+                    paraview_file.write_all("x, exv, numv\n".as_bytes())?;
                     for k in 0..raw_size {
                         on_line = h*k;
                         x_next = left + on_line as f64;
                         next_index = k + y_index * raw_size;
-                        string_raw = format!(r"{},{},{}",
-                            x_next, exact_vector[next_index], tvector[next_index]);
+                        string_raw = format!(r"{},{},{}{}",
+                            x_next, exact_vector[next_index], tvector[next_index], "\n");
                         paraview_file.write_all(&string_raw[..].as_bytes())?;
                     }
                     if y_index != end_of_traverse-1{
-                        string_raw = format!(r"{},{},{}", 
-                            steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size]);
+                        string_raw = format!(r"{},{},{} {}", 
+                            steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size], "\n");
                         paraview_file.write_all(&string_raw[..].as_bytes())?;
                     }
                     else{
-                        string_raw = format!(r"{},{},{}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1]);
+                        string_raw = format!(r"{},{},{} {}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1], "\n");
                         paraview_file.write_all(&string_raw[..].as_bytes())?;
                     }
                 }
@@ -600,12 +616,12 @@ pub fn add_additional_info_in_datas_end(dir: &PathBuf, nf: usize, t_max: Option<
         DEFAULT_ELEMENTS_PER_RAW
     };
     //Write additional info about reducing steps in graphics and spec for burger max_time
-    let param_treated = dir.join( format!("treated_datas_{0}", nf));
+    let param_treated = dir.join(format!("treated_datas_{0}", nf));
     let param_ex_to_read = param_treated.join( format!("parameters_nf{0}.txt", nf));
     println!("{}: {}", param_ex_to_read.display(), param_ex_to_read.exists());
     let path_to_read = Path::new(&param_ex_to_read);
     //This won't create file, so func create_safe_file_with_options can be applied
-    let mut prm_file= create_safe_file_with_options(param_ex_to_read)?;  
+    let mut prm_file= OpenOptions::new().write(true).open(param_ex_to_read)?;  
     let new_position_par = prm_file.seek(SeekFrom::End(0)).unwrap(); 
     prm_file.write_all(format!("\nPrinted elements per raw {}\n", raw_size).as_bytes())?;
     if let Some(t_max) = t_max {
