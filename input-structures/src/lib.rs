@@ -990,12 +990,21 @@ pub fn make_vec_output(dtotal_loop_nanos: i64){
     if dtotal_loop_nanos - chrono::Duration::seconds(1).num_nanoseconds().unwrap() > 0 {
 }
 }
-pub fn calculate_output_time_vec_based_on_outtime_rate(mut time_output_precised_secs: &f64, all_steps: usize, current_time_on_dt: f64, hor_time_step: usize, mut x_index: &usize, 
+pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current_time_on_dt: f64, hor_time_step: usize,
+    mut x_index: usize, mut time_output_precised_secs: f64, 
     vector_time: &mut Vec<f64>, vector_time_exact: &mut Vec<f64>, inner_vector: &Vec<f64>, first_ex: &Vec<f64>,
-        do_step_reduce_now: bool, print_npy: usize, my_deb: bool){
+        do_step_reduce_now: bool, print_npy: usize, my_deb: Option<bool>) -> (usize, f64){
+        let my_deb = if let Some(debug) = my_deb{
+            debug
+        }
+        else{
+            false
+        };
 //This function determine one horizont layer over unit of time
-    let mut time_output_precised_secs = *time_output_precised_secs;
-    if current_time_on_dt - time_output_precised_secs > 0.0{
+    if my_deb{
+        println!("ST: {}", current_time_on_dt - time_output_precised_secs);
+    }
+    if (current_time_on_dt - time_output_precised_secs) > 0.0 {
         let mut on_line: usize;
         let mut next_vec_index: usize;
         let mut all_step_size = if do_step_reduce_now{
@@ -1004,13 +1013,17 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(mut time_output_precised_
         else{
             all_steps
         };
-            let mut x_index = *x_index;
-            for k in 0 .. print_npy{
+            for k in 0 .. print_npy {
             //step over whole horizontal line
                 on_line = k * hor_time_step as usize;
             //This measure step as in one_dimentional array
-                next_vec_index = x_index + k ;
+                next_vec_index = x_index + k;
+                if my_deb{
+                    println!(" on_line: {} ^ inner_vector[on_line] {} = ", on_line, inner_vector[on_line]);
+                }
                     vector_time[next_vec_index] = inner_vector[on_line].clone();
+                println!("vector_time[next_vec_index]: {}", vector_time[next_vec_index]);
+        thread::sleep(Duration::from_secs(1_u64));
                     vector_time_exact[next_vec_index] = first_ex[on_line].clone();
                     if my_deb{
                         println!("current x_index {}, time in exact_vector: {} & time in vector: {}", next_vec_index, vector_time_exact[next_vec_index],
@@ -1023,13 +1036,14 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(mut time_output_precised_
                 vector_time_exact[x_index + print_npy] = first_ex[all_steps-1];
                     //will be print_npy + 1 every time
                     x_index= x_index + print_npy as usize;
+        time_output_precised_secs += time_output_precised_secs;
         }
         else{
 
         }
     println!("Value of x_index: {}", x_index);
 //as it from beginning had value i, then will be 2i, 3i...
-    time_output_precised_secs += time_output_precised_secs;
+    (x_index, time_output_precised_secs)
     }
 
 #[cfg(test)]
