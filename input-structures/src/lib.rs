@@ -638,13 +638,14 @@ let smax: f64 = match equation{
             info!("Max value in array with gauss wave: {}", maxvalue);
                 println!("MAXIMUM VALUE: {}", maxvalue);
             },
-            3 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение переноса")));
+            3 => {
+                pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение переноса")));
             //if start.clamp(f32::MIN, f32::MAX)==start && end.clamp(f32::MIN, f32::MAX)== end{
                 let distance= end_right - start_left;
                 let mut angle: f64;
-                const DOUBLE_PI: f32 = 2.0 * std::f64::consts::PI;
+                const DOUBLE_PI: f64 = 2.0 * std::f64::consts::PI;
                 for n in  0..steps {
-                    x_next = start_left + n as f64 * dx;
+                    let x_next = start_left + n as f64 * dx;
                     angle = x_next as f64 * DOUBLE_PI / distance;
                     vprevious[n] = angle.sin();
                     info!("Sinusoid: Step: {} - Value: {} ", n , vprevious[n as usize]);
@@ -661,7 +662,7 @@ let smax: f64 = match equation{
             second_ex.resize(all_steps, 0.0);
             inner_vector.resize(all_steps, 0.0);
                 for n in  0..all_steps {
-                    x_next = start_left + n as f64 * dx;
+                    let x_next = start_left + n as f64 * dx;
                     vprevious[n] = x_next * alpha + c;
                     info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
                 }
@@ -735,7 +736,7 @@ let smax: f64 = match equation{
                     max_value},
             2 =>  //Manage with some differences*
             {
-                for n in  0..steps {
+                for n in 0..steps {
                     x_next = n;
                     let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
                     //x_next = start + n as f64 * dx;//this neede to be on "domain" scale
@@ -752,17 +753,13 @@ let smax: f64 = match equation{
                     println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
                                     maxvalue
             },
-            _ => {panic!("Initial equation condition incorrect");
-            }
-        };
-        fsmax}, 
-        3 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение Burger")));
+        3 => {
+            pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение Burger")));
             let distance= end_right - start_left;
-            let mut angle: f32;
-            let mut x_next;
+            let mut angle: f64;
             const DOUBLE_PI: f64 = 2.0 * std::f64::consts::PI;
             for n in  0..all_steps {
-                x_next = start + n as f64 * dx;
+                let x_next = left + n as f64 * dx;
                 angle = x_next as f64 * DOUBLE_PI / distance;
                 vprevious[n] = angle.sin();
                 info!("Sinusoid: Step: {} - Value: {} ", n , vprevious[n as usize]);
@@ -781,7 +778,7 @@ let smax: f64 = match equation{
             second_ex.resize(all_steps, 0.0);
             inner_vector.resize(all_steps, 0.0);
             for n in  0..all_steps {
-                x_next = start + n as f64 * dx;
+                let x_next = start as f64+ n as f64 * dx;
                 vprevious[n] = x_next * alpha + c;
                 info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
             }
@@ -790,8 +787,11 @@ let smax: f64 = match equation{
             info!("Max value in array with lines: {}", maxvalue);
             println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
                                         maxvalue},
-    _ => panic!("Initial equation condition incorrect") 
-    };
+    _ => panic!("Initial equation condition incorrect") ,
+    }; 
+    fsmax}, 
+    _ => panic!("Initial equation condition incorrect") ,
+};
     let new_now = std::time::Instant::now();
     println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
 (first_ex , second_ex , temporary, vprevious, inner_vector, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
@@ -981,7 +981,51 @@ pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, 
     }
     //(vprevious, first_ex, second_ex)
 }
+pub fn calculate_cycles_per_sec(dtotal_loop_nanos: u128){
+    if dtotal_loop_nanos - chrono::Duration::seconds(1).num_nanoseconds().unwrap() > 0 {
+        
+    }
+}
+pub fn make_vec_output(dtotal_loop_nanos){
+    if dtotal_loop_nanos - chrono::Duration::seconds(1).num_nanoseconds().unwrap() > 0 {
+}
+pub fn calculate_output_time_vec_based_on_outrate(time_output_precised_secs: u128, begin_of_main: u128, hor_time_step: usize, x_index: usize, 
+    vector_time: Vec<f64>, vector_time_exact: Vec<f64>,
+        do_step_reduce_now: bool, print_npy: u64, my_deb: bool){
+    if begin_of_main - time_output_precised_secs > 0{
+        let mut on_line;
+        let mut next_vec_index;
+        if do_step_reduce_now{
+            for k in 0 .. print_npy{
+            //step over whole horizontal line
+                on_line = k * hor_time_step as usize;
+            //This measure step as in one_dimentional array
+                next_vec_index = x_index as usize + k as usize;
+                    vector_time[next_vec_index] = inner_vector[on_line].clone();
+                    vector_time_exact[next_vec_index] = first_ex[on_line].clone();
+                    if my_deb{
+                        println!("current x_index {}, time in exact_vector: {} & time in vector: {}", next_vec_index, vector_time_exact[next_vec_index],
+                        vector_time[next_vec_index]);
+                    }
+                        //thread::sleep(time::Duration::from_millis(400_u64));
+                        //println!("Получившиеся значения с шагом {} равны {}\n", k, Vector_time[k+x_index as usize]);
+                }//Last step will be exact...
+                vector_time[x_index + print_npy] = inner_vector[all_steps-1];
+                vector_time_exact[x_index + print_npy] = first_ex[all_steps-1];
+                thread::sleep(time::Duration::from_millis(SLEEP_NORMAL));
+            }
+                if current_time_on_dt - (vertical_point/time_decrease).ceil() > 0.0  {
+                    x_index= x_index + print_npy as usize;
+                    vertical_point+= time_ev.1;
+                }
+        }
+        else{
 
+        }
+//as it from beginning had value i, then will be 2i, 3i...
+    time_output_precised_secs += time_output_precised_secs;
+    }
+}
 #[cfg(test)]
 mod tests {
     #[test]
