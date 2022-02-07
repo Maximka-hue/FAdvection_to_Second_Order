@@ -543,39 +543,60 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
         }
 //This will create csv like txt files to turn them in paraview window ------------------------------------
         if paraview_format.unwrap_or(false){
-            let mut switch_path = dir.join("paraview_datas");
-            println!("quantity parts size: {}\n paraview path: {:?}\n Is it directory? {}", raw_size, switch_path, switch_path.is_dir());
-            fs::create_dir_all(switch_path)?;
+            let switch_path_paraview = dir.join("paraview_datas");
+            println!("quantity parts size: {}\n paraview path: {:?}\n Is it directory? {}", raw_size, switch_path_paraview, switch_path_paraview.is_dir());
+            fs::create_dir_all(switch_path_paraview)?;
             let end_of_traverse_exact = tvector.len() as f64/raw_size  as f64;
             let end_of_traverse = (tvector.len() as f64 / raw_size  as f64).floor() as usize;
             println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
             for y_index in 0.. end_of_traverse{
                 //Check that vector doesn't contain all zeros
                 if tvector[y_index..y_index+(raw_size-1) as usize].iter().all(|&v| !approx_equal(v, 0.0, 3)){
-                    switch_path = switch_path.join(format!("x_u_w_{1}_{2}.txt", nf, y_index));
-                    let mut my_file = create_safe_file_with_options(&switch_path[..])?;//superfluously
-                    my_file.write_all("x,exv,numv\n".as_bytes())?;
+                    let switch_path = dir.join("paraview_datas").join(format!("x_u_w_{0}_{1}.txt", nf, y_index));
+                    let mut paraview_file = create_safe_file_with_options(switch_path)?;//superfluously
+                    paraview_file.write_all("x,exv,numv\n".as_bytes())?;
                     for k in 0..raw_size {
                         on_line = h*k;
                         x_next = left + on_line as f64;
                         next_index = k + y_index * raw_size;
                         string_raw = format!(r"{},{},{}",
                             x_next, exact_vector[next_index], tvector[next_index]);
-                        my_file.write_all(&string_raw[..].as_bytes())?;
+                        paraview_file.write_all(&string_raw[..].as_bytes())?;
                     }
                     if y_index != end_of_traverse-1{
                         string_raw = format!(r"{},{},{}", 
                             steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size]);
-                        my_file.write_all(&string_raw[..].as_bytes())?;
+                        paraview_file.write_all(&string_raw[..].as_bytes())?;
                     }
                     else{
                         string_raw = format!(r"{},{},{}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1]);
-                        my_file.write_all(&string_raw[..].as_bytes())?;
+                        paraview_file.write_all(&string_raw[..].as_bytes())?;
                     }
                 }
             }
         }
+//Write additional info about reducing steps in graphics and spec for burger max_time
+    let param_treated = dir.join( format!("treated_datas_{0}", nf));
+    let param_ex_to_read = param_treated.join( format!("parameters_{0}.txt", nf));
+    println!("{}: {}", param_ex_to_read.display(), param_ex_to_read.exists());
+    let path_to_read = Path::new(&param_ex_to_read);
+    //This won't create file, so func create_safe_file_with_options can be applied
+    let mut prm_file= create_safe_file_with_options(param_ex_to_read)?;  
+    let new_position_par = prm_file.seek(SeekFrom::End(0)).unwrap(); 
+    prm_file.write_all(format!("\nPrinted elements per raw {}\n", raw_size).as_bytes())?;
+    if let Some(t_max) = t_max {
+        prm_file.write_all(format!("{} Maximum live time in burger task: {}\n","\t", t_max).as_bytes())?;
+    }
 //Else I can pass it into csv format
+    let necessity_of_csv = necessity_of_csv.unwrap_or(false);//shaded variable
+    let mut new_switch_path: PathBuf;
+    if necessity_of_csv == true {
+        let ub = format!(r"csv_{0}", nf);
+        new_switch_path = dir.join(ub);
+        let mut csv_data_dir = Path::new(&new_switch_path);
+        let err = fs::create_dir_all(csv_data_dir)?;
+    }
+
         Ok(())
 }
 //________________________Additional+++++++++++++++++++++++++++++++++++++
