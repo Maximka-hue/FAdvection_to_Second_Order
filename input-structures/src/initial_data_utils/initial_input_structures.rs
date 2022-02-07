@@ -161,7 +161,8 @@ impl FileParametresBuilder {
                     return Ok(())
                     }
                 }Ok(())}*/
-    return Ok(())}
+    //return Ok(())
+    }
 }
 //*****************************************************************************************************************************  
 impl FileParametres {
@@ -487,7 +488,7 @@ fn create_output_dir(fnum: usize, num_files: usize) -> StdResult<( PathBuf, File
     Ok((next_pathbuf, processed_params))
 }
 
-     
+
 pub fn initial_information_of_advection() -> Instant {
     //let ttti = TaskType::default();//TaskType::Burger(ColorSpec::new()).default();
     //This will print initial information about the advection programm and me.
