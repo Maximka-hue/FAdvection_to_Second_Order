@@ -17,7 +17,8 @@ use input_structure::initial_data_utils::{parse_into_file_parameters};
 use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, 
     op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files};
 use input_structure::{TaskType, TaskTypeCs, FileParametres, initial_information_of_advection, 
-    advection_input, process_files, main_initialization, do_exact_solutions, main_cycle_first_order, main_cycle_with_correction};
+    advection_input, process_files, main_initialization, do_exact_solutions,
+    main_cycle_first_order, main_cycle_with_correction, calculate_output_time_vec_based_on_outtime_rate};
 #[macro_use]
 extern crate colour;
 #[macro_use] 
@@ -348,36 +349,36 @@ let type_of_correction_program = true;
         let mut second_correction = vec![0_f64; width];
         let mut fu_next: f64 = 0.0;   
         let mut fu_prev: f64 = 0.0;
-        let mut dtotal_loop = chrono::Duration::zero();
-        let mut dtotal_loop_nanos = dtotal_loop.num_nanoseconds().unwrap();
         let mut y_index: usize = 0;//whole vertical direction over time vector
         let mut x_index: usize = 0;//whole horizont over time vector
-        let mut cur_period: usize = 0;
+        let mut cur_period: f64 = 0.0;
         let mut period: usize = 0;
         let mut output_periods: Vec<usize> = Vec::new();
-        //save here for numerical and exact output
-        let vec_output = vec![
-            vec![0_f64; time_decrease.ceil() as usize * size_time * output_time_max as usize / (output_time_rate as usize) + 2_usize], 
-            vec![0_f64; time_decrease.ceil() as usize * size_time * output_time_max as usize / output_time_rate as usize + 2_usize]];
-        let mut vector_time: Vec<f64>= if !time_switch {
-            //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
-            Vec::with_capacity(output_time_max as f64 * print_npy as f64/ output_time_rate as f64)
-        }
-            else{
-                //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure)
-                vec![0_f64; (output_time_max / (output_time_rate * cycle_time)).ceil() as usize]
-        };
-        let mut vector_time_exact = if !time_switch {
-            //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
-            Vec::with_capacity(output_time_max as f64 * print_npy as f64/ output_time_rate as f64)
-        }
-            else{
-                //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure)
-                vec![0_f64; (output_time_max / (output_time_rate * cycle_time)).ceil() as usize]
-        };
         let all_steps = if SIMPLE_STEP_TYPE {steps} else {steps + 2_usize};  
 //REDUCE_TIME_TO_INT
     let print_npy = DIVIDE_ALL_STEPS_TO_PYTHON_PIC;
+        //save here for numerical and exact output
+        let vec_output = vec![
+            vec![0_f64; time_decrease.ceil() as usize /* * size_time */* output_time_max as usize / (output_time_rate as usize) + 2_usize], 
+            vec![0_f64; time_decrease.ceil() as usize /* * size_time */ * output_time_max as usize / output_time_rate as usize + 2_usize]];
+        let mut vector_time: Vec<f64>= if !switch_time {
+            //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
+            Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
+        }
+            else{
+                //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure)
+                //vec![0_f64; (output_time_max / (output_time_rate * cycle_time)).ceil() as usize]
+                Vec::new()
+        };
+        let mut vector_time_exact = if !switch_time {
+            //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
+            Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
+        }
+            else{
+                //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure) but this will be 
+                //measured in main cycle after conditional time
+                Vec::new()
+        };
     let dir_to_graphics: PathBuf = calculation_data_path.join("datas");
     show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, fi, "This is the time after initializing shape", Some("the_beggining_shape"), deb_my);
     if deb_my{
@@ -386,6 +387,7 @@ let type_of_correction_program = true;
     }
         //Loops dtermined by dt
         let mut processed_time_nanos = chrono::Duration::nanoseconds(0);
+    //This measure current time layer by layer determined by dt
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
 //This means step by which aliquot will be reported in time vec(horizontal step)
         let mut hor_time_step = (all_steps as f64/ print_npy as f64).floor() as usize;
@@ -399,7 +401,7 @@ let type_of_correction_program = true;
 //Needed to measure real-time rate
     let mut begin_of_cycle; 
     let mut cycle_time = chrono::Duration::nanoseconds(0);
-    let mut cycle_time_nanos: u128 = cycle_time.num_nanoseconds().unwrap();
+    let mut cycle_time_nanos: i64 = cycle_time.num_nanoseconds().unwrap();
         println!("Approximate equal to 3 float digits? - {}", approx_equal(time_dif_in_secs, 0.0, 3));
         'main_cycle: while !approx_equal(time_dif_in_secs, 0.0, 3) {
             begin_of_cycle = Instant::now();
@@ -426,8 +428,9 @@ let type_of_correction_program = true;
                     fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, bound,
                     all_steps, deb_my, type_of_correction_program, smooth_intensity);
             }
-            cur_period+=1_usize;
-           
+            period+=1_usize;
+            
+            
             if ADDITION_OF_TIME_VECTORS{
 
             }
@@ -447,6 +450,7 @@ let type_of_correction_program = true;
             let elapsed_in = begin_of_main.elapsed();
             println!("\nMain calculation: {:?} < {:?}", elapsed_in, new_now.duration_since(begin_of_main));
             time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
+            let do_step_reduce_now = true;
             if switch_time {
                 //Loops made on real-time 
                 time_dif_in_secs = maxl_time_secs as f64 - elapsed_in.as_secs() as f64;
@@ -459,11 +463,14 @@ let type_of_correction_program = true;
             else{
             time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
             time_dif_in_secs = maxl_time_secs as f64 - current_time_on_dt;
+            //Now let's save datas to create animations further. 
+            calculate_output_time_vec_based_on_outtime_rate(&output_time_rate, all_steps, current_time_on_dt, hor_time_step , &x_index, 
+                &mut vector_time, &mut vector_time_exact, &inner_vector, &first_ex,
+                do_step_reduce_now, print_npy, deb_my);
             println!("dt- {}", dt);
             }
             current_time_on_dt += dt;// move up
             y_index += 1;// output time 
-            cur_period += 1;
             //Measure real-time from procesing programm
             processed_time_nanos = processed_time_nanos.checked_add(&chrono::Duration::from_std(new_now - begin_of_main).unwrap()).unwrap();
             println!("{} ^ {}", processed_time_nanos, maxl_time_secs as f64 - elapsed_in.as_secs() as f64 * cur_period as f64);
