@@ -473,7 +473,7 @@ let type_of_correction_program = true;
             //Now let's save datas to create animations further. 
             (x_index, output_time_rate) = calculate_output_time_vec_based_on_outtime_rate(all_steps, current_time_on_dt, hor_time_step,
                 x_index, output_time_rate, &mut vector_time, &mut vector_time_exact, &vprevious/*because it is current swapped*/, &first_ex,
-                do_step_reduce_now, print_npy, deb_my);
+                do_step_reduce_now, print_npy, Some(deb_my));
                 exact_float_time_dif = output_time_max - current_time_on_dt;
                 time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
                 time_dif_in_secs = maxl_time_secs as f64 - current_time_on_dt;
