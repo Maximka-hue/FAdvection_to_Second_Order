@@ -502,7 +502,7 @@ let type_of_correction_program = true;
         let t_maxx = if equation ==0 {None} else {Some(t_max)}; //&vector_time, &vector_time_exact,
         show_shape(all_steps, print_npy, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
         save_files(&calculation_anim_path,  vector_time, Some(vector_time_exact), (all_steps, Some(left_domend), Some(right_domend)), Some(print_npy), 
-            fi, Some(output_periods), Some(true), Some(true));
+            fi, Some(output_periods), Some(true), Some(true), Some(deb_my));
         add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(print_npy));
     });
     println!("Programm had been finished at: {:?}", new_now.duration_since(advection_start));
