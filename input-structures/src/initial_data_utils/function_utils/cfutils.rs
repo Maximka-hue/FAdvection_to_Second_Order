@@ -48,6 +48,7 @@ pub const  SLEEP_MAX: u16 = SLEEP_HIGH * 2;
 pub const  ALL_TIMES: [u16; 5] = [SLEEP_PASS, SLEEP_LOW, SLEEP_NORMAL, SLEEP_HIGH, SLEEP_MAX];
 
 pub const  ARGUMENTO_DBGOUT: bool = true;
+pub const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
 
 pub fn op_sys() -> OSType {
     let os = os_type::current_platform();
@@ -509,11 +510,10 @@ fn create_safe_file_with_options(path: PathBuf) -> Result<std::fs::File, std::io
         });
     Ok(file)
 }
-pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right, t_max): (usize, Option<f64>, Option<f64>, Option<f64>), 
+pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right): (usize, Option<f64>, Option<f64>), 
     elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>) -> std::io::Result<()>{
 //Define variables +++++++++++++++++++++++++++++++++++++++++++++++
         let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
-        const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
         let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
             elements_per_raw
         }
@@ -575,9 +575,33 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
                 }
             }
         }
-//Write additional info about reducing steps in graphics and spec for burger max_time
+//Else I can pass it into csv format
+    let necessity_of_csv = necessity_of_csv.unwrap_or(false);//shaded variable
+    let mut new_switch_path: PathBuf;
+    if necessity_of_csv == true {
+        let ub = format!(r"csv_{0}", nf);
+        new_switch_path = dir.join(ub);
+        let csv_data_dir = Path::new(&new_switch_path);
+        let err = fs::create_dir_all(csv_data_dir)?;
+    }
+    let mut csv_array = vec![vec![0.0; 2_usize * raw_size];
+        cmp::max(tvector.len(), exact_vector.len())];
+    let mut x_index: usize;
+        //let mut wtr_inner;
+        //let mut temp_csv;
+
+        Ok(())
+}
+pub fn add_additional_info_in_datas_end(dir: &PathBuf, nf: usize, t_max: Option<f64>,  elements_per_raw: Option<usize>)-> std::io::Result<()>{
+    let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
+        elements_per_raw
+    }
+    else{
+        DEFAULT_ELEMENTS_PER_RAW
+    };
+    //Write additional info about reducing steps in graphics and spec for burger max_time
     let param_treated = dir.join( format!("treated_datas_{0}", nf));
-    let param_ex_to_read = param_treated.join( format!("parameters_{0}.txt", nf));
+    let param_ex_to_read = param_treated.join( format!("parameters_nf{0}.txt", nf));
     println!("{}: {}", param_ex_to_read.display(), param_ex_to_read.exists());
     let path_to_read = Path::new(&param_ex_to_read);
     //This won't create file, so func create_safe_file_with_options can be applied
@@ -587,17 +611,7 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
     if let Some(t_max) = t_max {
         prm_file.write_all(format!("{} Maximum live time in burger task: {}\n","\t", t_max).as_bytes())?;
     }
-//Else I can pass it into csv format
-    let necessity_of_csv = necessity_of_csv.unwrap_or(false);//shaded variable
-    let mut new_switch_path: PathBuf;
-    if necessity_of_csv == true {
-        let ub = format!(r"csv_{0}", nf);
-        new_switch_path = dir.join(ub);
-        let mut csv_data_dir = Path::new(&new_switch_path);
-        let err = fs::create_dir_all(csv_data_dir)?;
-    }
-
-        Ok(())
+    Ok(())
 }
 //________________________Additional+++++++++++++++++++++++++++++++++++++
 pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
