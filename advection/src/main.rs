@@ -15,7 +15,7 @@ use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_ma
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
 use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, 
-    op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files};
+    op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files, add_additional_info_in_datas_end};
 use input_structure::{TaskType, TaskTypeCs, FileParametres, initial_information_of_advection, 
     advection_input, process_files, main_initialization, do_exact_solutions,
     main_cycle_first_order, main_cycle_with_correction, calculate_output_time_vec_based_on_outtime_rate};
@@ -314,7 +314,7 @@ let type_of_correction_program = true;
     };
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     let output_time_max = time_ev.0;
-    let output_time_rate = time_ev.1;
+    let mut output_time_rate = time_ev.1;
     //To pass in method std::Duration as u64 digit I need to converge it
     let max_time_output_precised_secs = (((output_time_max * 1000_000_000_f64)).ceil() as u64)/1000_000_000_u64;
     let max_time_output_precised_nanosecs = ((output_time_max * 1000_000_000_f64)).ceil() as u64;
@@ -330,10 +330,14 @@ let type_of_correction_program = true;
     let mut out_time_secs = out_time_secs.as_secs();
     let mut out_time_nanosecs = out_time_nanosecs.as_nanos();
 //---------------------------------------------------------------------------------------
-/*step on y*/let dt = match equation {
+/*step on y*/let dt_from_init = match equation {
             0 => if a_positive {co * dx/(smax)} else {co * dx/(-smax)},
             1 => if possgn_smax {co * dx/(smax)} else {co * dx/(-smax)},
             _ => panic!("Not type match")
+        };
+        let dt = if dt_from_init< 0.001 {panic!("t step too small, please coreect initial conditions")} 
+        else{
+            dt_from_init
         };
         //Amount of steps vertically = dt * #steps vertically which in turn determine by maxl_time 
     let height = (output_time_max as f64 / dt as f64).ceil() as usize;
@@ -359,11 +363,12 @@ let type_of_correction_program = true;
     let print_npy = DIVIDE_ALL_STEPS_TO_PYTHON_PIC;
         //save here for numerical and exact output
         let vec_output = vec![
-            vec![0_f64; time_decrease.ceil() as usize /* * size_time */* output_time_max as usize / (output_time_rate as usize) + 2_usize], 
-            vec![0_f64; time_decrease.ceil() as usize /* * size_time */ * output_time_max as usize / output_time_rate as usize + 2_usize]];
+            vec![0_f64; time_decrease.ceil() as usize /* * size_time */* (output_time_max / output_time_rate) as usize  + 2_usize], 
+            vec![0_f64; time_decrease.ceil() as usize /* * size_time */ * (output_time_max / output_time_rate) as usize  + 2_usize]];
         let mut vector_time: Vec<f64>= if !switch_time {
             //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
-            Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
+            //Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
+            vec![0_f64; (output_time_max as f64 * all_steps as f64/ output_time_rate as f64).ceil() as usize] // print_npy as f64
         }
             else{
                 //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure)
@@ -372,7 +377,8 @@ let type_of_correction_program = true;
         };
         let mut vector_time_exact = if !switch_time {
             //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
-            Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
+            //Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
+            vec![0_f64; (output_time_max as f64 * all_steps as f64/ output_time_rate as f64).ceil() as usize]// print_npy as f64
         }
             else{
                 //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure) but this will be 
@@ -389,6 +395,7 @@ let type_of_correction_program = true;
         let mut processed_time_nanos = chrono::Duration::nanoseconds(0);
     //This measure current time layer by layer determined by dt
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
+        let mut exact_float_time_dif: f64 = output_time_max;
 //This means step by which aliquot will be reported in time vec(horizontal step)
         let mut hor_time_step = (all_steps as f64/ print_npy as f64).floor() as usize;
         let begin_of_main= Instant::now(); 
@@ -403,7 +410,9 @@ let type_of_correction_program = true;
     let mut cycle_time = chrono::Duration::nanoseconds(0);
     let mut cycle_time_nanos: i64 = cycle_time.num_nanoseconds().unwrap();
         println!("Approximate equal to 3 float digits? - {}", approx_equal(time_dif_in_secs, 0.0, 3));
-        'main_cycle: while !approx_equal(time_dif_in_secs, 0.0, 3) {
+        'main_cycle: while exact_float_time_dif > 0.0 {
+        println!("exact_float_time_dif {}\n current_time_on_dt - output_time_rate {}", exact_float_time_dif, current_time_on_dt - output_time_rate);
+        thread::sleep(SDuration::from_secs(1_u64));
             begin_of_cycle = Instant::now();
             if deb_my {
                 println!("Approximate equal to 3 float digits? - {}", approx_equal(maxl_time_nanosecs as f64 - current_time_on_dt, 0.0, 3));
@@ -419,12 +428,12 @@ let type_of_correction_program = true;
 //------------------------------------------------------------------------------
 //Simply calculate second layer based on previous one
             if !correction{
-                main_cycle_first_order(&mut vprevious,&mut inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, bound, a_positive, possgn_smax, 
+                main_cycle_first_order(&mut vprevious, &mut inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, bound, a_positive, possgn_smax, 
                     all_steps, deb_my);
                 }
 //Otherwise  calculate  with correction
             else{
-                main_cycle_with_correction(&mut vprevious,&mut inner_vector,&mut prediction,&mut first_correction,&mut second_correction, 
+                main_cycle_with_correction(&mut vprevious, &mut inner_vector, &mut prediction, &mut first_correction, &mut second_correction, 
                     fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, bound,
                     all_steps, deb_my, type_of_correction_program, smooth_intensity);
             }
@@ -461,13 +470,16 @@ let type_of_correction_program = true;
                 info!("This time extract cycle_end of one horiz. step(millis) {:?}", cycle_time_nanos / 1000_000_i64);
             }
             else{
-            time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
-            time_dif_in_secs = maxl_time_secs as f64 - current_time_on_dt;
             //Now let's save datas to create animations further. 
-            calculate_output_time_vec_based_on_outtime_rate(&output_time_rate, all_steps, current_time_on_dt, hor_time_step , &x_index, 
-                &mut vector_time, &mut vector_time_exact, &inner_vector, &first_ex,
+            (x_index, output_time_rate) = calculate_output_time_vec_based_on_outtime_rate(all_steps, current_time_on_dt, hor_time_step,
+                x_index, output_time_rate, &mut vector_time, &mut vector_time_exact, &vprevious/*because it is current swapped*/, &first_ex,
                 do_step_reduce_now, print_npy, deb_my);
+                exact_float_time_dif = output_time_max - current_time_on_dt;
+                time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
+                time_dif_in_secs = maxl_time_secs as f64 - current_time_on_dt;
+            //println!("vector_time: \n{:?} ^vector_time_exact: \n{:?}", vector_time, vector_time_exact);
             println!("dt- {}", dt);
+        //thread::sleep(SDuration::from_secs(1_u64));
             }
             current_time_on_dt += dt;// move up
             y_index += 1;// output time 
@@ -478,6 +490,10 @@ let type_of_correction_program = true;
                 ansi_term::Colour::Yellow.underline().paint(format!("Real-time elapsed: {processed_time_nanos:6?}")));
             if vprevious.iter().all(|&v| approx_equal(v, 0.0, 3)){
                 warn!("Main cycle has been broken before designated time!-cause all numeric elements equal to zero with 3 digit precision");
+                if vector_time.iter().all(|&v| approx_equal(v, 0.0, 3)) &&
+                vector_time_exact.iter().all(|&v| approx_equal(v, 0.0, 3)){
+                    panic!("Nothing has been output in png as output rate too large to fix things now");
+                }
                 break 'main_cycle;
             }
         }
@@ -485,8 +501,9 @@ let type_of_correction_program = true;
         let calculation_anim_path = animation_path.join("datas");
         let t_maxx = if equation ==0 {None} else {Some(t_max)}; //&vector_time, &vector_time_exact,
         show_shape(all_steps, print_npy, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
-        save_files(&calculation_anim_path,  vprevious, Some(inner_vector), (all_steps, Some(left_domend), Some(right_domend), t_maxx), Some(print_npy), 
+        save_files(&calculation_anim_path,  vector_time, Some(vector_time_exact), (all_steps, Some(left_domend), Some(right_domend)), Some(print_npy), 
             fi, Some(output_periods), Some(true), Some(true));
+        add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(print_npy));
     });
     println!("Programm had been finished at: {:?}", new_now.duration_since(advection_start));
 }
