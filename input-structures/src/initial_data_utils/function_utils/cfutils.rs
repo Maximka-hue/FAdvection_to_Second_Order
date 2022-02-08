@@ -33,12 +33,12 @@ use text_colorizer::*;
 use termion;
 use std::error::Error as SError;//**** 
 type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
-
+use glob;
 //use dao_ansi::color::kinds::{ForegroundColor, BackgroundColor, PrimaryColor};
-/* Regex 
-use lazy_static::lazy_static;
+//Regex 
+//use lazy_static::lazy_static;
 use regex::Regex;
-use regex::{RegexSet};*/
+use regex::{RegexSet};
 
 pub const  SLEEP_PASS: u16 = 0;
 pub const  SLEEP_LOW: u16 = 100;
@@ -258,7 +258,10 @@ pub fn create_output_dir(mut fnum: usize, num_files: usize, should_sleep: bool, 
     //This determine that file amount greater than fnum.
     let bu = PathBuf::from("src\\fi_greater_fnum.txt");
     let next_pathbuf= if fnum < num_files {parameter_file} else {bu};
-    let next_str = next_pathbuf.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
+    let next_str = next_pathbuf.clone().into_iter().map(|h| /*{let first_psgn = "/".to_owned();
+    first_psgn.push_str(&String::from(h.to_string_lossy())[..]);
+    first_psgn.push_str("/")}*/
+    format!("{}{}{}",  "/", &String::from(h.to_string_lossy())[..],  "/")).collect();
     Ok((fnum, next_pathbuf, next_str, processed_params))
 }
     
@@ -498,7 +501,7 @@ pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactve
             }
 
 fn create_safe_file_with_options(path: PathBuf) -> Result<std::fs::File, std::io::Error>{
-    let file = OpenOptions::new().write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
+    let file = OpenOptions::new().create(true).write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
         if error.kind() == ErrorKind::NotFound {
             File::create(&path).unwrap_or_else(|error| {
                 panic!("Problem creating the file: {:?}", error);
@@ -510,10 +513,30 @@ fn create_safe_file_with_options(path: PathBuf) -> Result<std::fs::File, std::io
         });
     Ok(file)
 }
+fn walk(dir: &Path, cb: &dyn Fn(&PathBuf), recurse: bool) ->
+io::Result<()> {
+    for entry in dir.read_dir()? {
+        let entry = entry?;
+        let path = entry.path();
+        if recurse && path.is_dir() {
+            walk(&path, cb, true)?;
+        }
+        cb(&path);
+    }
+    Ok(())
+}
+type GenericError = Box<dyn SError + Send + Sync + 'static>;
+fn walk_glob(pattern: &str, cb: &dyn Fn(&PathBuf)) -> Result<(),
+    GenericError> {
+        for entry in glob::glob(pattern)? {
+            cb(&entry?);
+        }
+        Ok(())
+    }
 pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right): (usize, Option<f64>, Option<f64>), 
     elements_per_raw: Option<usize>, nf: usize, output_periods: Option<Vec<usize>>, necessity_of_csv: Option<bool>, paraview_format: Option<bool>, my_deb: Option<bool>) 
     -> std::io::Result<()>{
-        let my_deb = if let Some(debug) = my_deb{
+        let my_deb = if let Some(debug) = my_deb {
             debug
         }
         else{
@@ -540,6 +563,7 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
         println!("directory specified {:?} paraview_format: {:?}" , dir, paraview_format);
         let pypath = dir.join(format!("to_python_{}.txt", nf));//.join(format!(r"\{}", dir.display()))
         let expypath = dir.join(format!("exact_to_python_{}.txt", nf));
+        let newly_treated = dir.join(format!("treated_datas_{}", nf));
         let parameters_path = dir.join(format!("parameters_{}.txt", nf));
         println!("{:?}  ^ {:?} ^ \n{:?}", format!("PyPaths for graphics: \n{:?}", pypath), expypath, parameters_path);
         let mut exact_vector: Vec<f64> = Vec::with_capacity(tvector.len()+1);
@@ -552,41 +576,45 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
         if paraview_format.unwrap_or(false){
             let switch_path_paraview = dir.join("paraview_datas");
             println!("quantity parts size: {}\n paraview path: {:?}\n Is it directory? {}", raw_size, switch_path_paraview, switch_path_paraview.is_dir());
-            fs::create_dir_all(switch_path_paraview)?;
-            let end_of_traverse_exact = tvector.len() as f64/raw_size  as f64;
+            let end_of_traverse_exact = tvector.len() as f64 / raw_size  as f64;
             let end_of_traverse = (tvector.len() as f64 / raw_size  as f64).floor() as usize;
             println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
+            let new_paraview_dir_to_create = newly_treated.join("paraview_datas");
+            let new_paraview_dir = newly_treated.join("paraview_datas");
+            fs::create_dir_all(new_paraview_dir_to_create)?;
             for y_index in 0.. end_of_traverse {
                 //Check that vector doesn't contain all zeros
                 //println!("{:?} \n {:?}\n^", tvector, exact_vector);
-                if my_deb{
+                if my_deb {
                     println!("y_index {}, Condition on write, Any of elements!=0: {}",
                     y_index, tvector[y_index..y_index+(raw_size-1) as usize].iter().any(|&v| !approx_equal(v, 0.0, 3)));
                 }
                 if tvector[y_index..y_index+(raw_size-1) as usize].iter().any(|&v| !approx_equal(v, 0.0, 3)){
-                    let switch_path = dir.join("paraview_datas").join(format!("x_u_w_{0}_{1}.txt", nf, y_index));
+                    let updating_x_u_w = new_paraview_dir.join(format!("x_u_w_{0}_{1}.txt", nf, y_index));
+                    let path = Path::new(&new_paraview_dir);
                     if my_deb{
-                        println!("switch_path_x_u_w : {:?}", switch_path);
+                        println!("switch_path_x_u_w : {:?}", updating_x_u_w);
                     }
-                    let mut paraview_file = create_safe_file_with_options(switch_path)?;//superfluously
-                    println!("{:?}" , paraview_file);
-                    paraview_file.write_all("x, exv, numv\n".as_bytes())?;
+                    println!("Listing '{}'", path.display());
+                    let mut paraview_file_x_u_w = create_safe_file_with_options(updating_x_u_w)?;//superfluously
+                    println!("{:?}" , paraview_file_x_u_w);
+                    paraview_file_x_u_w.write_all("x, exv, numv\n".as_bytes())?;
                     for k in 0..raw_size {
                         on_line = h*k;
                         x_next = left + on_line as f64;
                         next_index = k + y_index * raw_size;
-                        string_raw = format!(r"{},{},{}{}",
+                        string_raw = format!(r"{}, {}, {}{}",
                             x_next, exact_vector[next_index], tvector[next_index], "\n");
-                        paraview_file.write_all(&string_raw[..].as_bytes())?;
+                        paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
                     }
                     if y_index != end_of_traverse-1{
-                        string_raw = format!(r"{},{},{} {}", 
+                        string_raw = format!(r"{}, {}, {} {}", 
                             steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size], "\n");
-                        paraview_file.write_all(&string_raw[..].as_bytes())?;
+                        paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
                     }
                     else{
-                        string_raw = format!(r"{},{},{} {}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1], "\n");
-                        paraview_file.write_all(&string_raw[..].as_bytes())?;
+                        string_raw = format!(r"{}, {}, {} {}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1], "\n");
+                        paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
                     }
                 }
             }
