@@ -62,6 +62,38 @@ def norm2(u,w,h,z,a,bq):
 ssleep = False
 debuging_smth = True
 info_euclid = False
+#meta function
+def remove_empty_lists(l):
+    keep_going = True
+    prev_l = l
+    while keep_going:
+        #call remover on the list
+        new_l = remover(prev_l)
+        #are they identical objects?
+        if new_l == prev_l:
+            keep_going = False
+        #set prev to new
+        prev_l = new_l
+    #return the result
+    return new_l
+
+
+#function
+def remover(l):
+    #new list
+    newlist = []
+    #loop over elements
+    for i in l:
+        #pdb.set_trace()
+        #is element a non-empty list? then call self on it
+        if isinstance(i, list) and len(i) != 0:
+            newlist.append(remover(i))
+        #if not a list
+        if not isinstance(i, list):
+            newlist.append(i)
+    
+    #return newlist
+    return newlist
 """This will have parameters paths on which from rust processed data will generate animations
 
 trburcor/Animation -  here different form types will lie with their parameters
@@ -84,6 +116,14 @@ def glob_re(path, regex="", glob_mask="**/*", inverse=False):
         res = [str(f) for f in p.glob(glob_mask) if re.search(regex, str(f))]
         count+=len(res)
     return (res,count)
+def nested_remove(L, x):
+    if x in L:
+        L.remove(x)
+    else:
+        for element in L:
+            if type(element) is list:
+                nested_remove(element, x)
+#++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 current_rust_directory = "/home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order"
 # First set up the figure, the axis, and the plot element we want to animate
 fig, ax = plt.subplots(nrows=1, ncols=1,
@@ -338,17 +378,24 @@ print("Now divided num tuple: ", snum)
 print("And exact tuple: ", sexact)
 fall = np.zeros(shape = (len(arrays),2), dtype = 'f')
 print(fall)
+arrays = remove_empty_lists(arrays)#Left not null elements
+sizes = remove_empty_lists(sizes)#Left not null elements
 fs_num = np.zeros(shape = snum, dtype = 'f')
-fs_num = np.asarray([np.asarray(arrays[k]) for k in range(len(arrays[0]))])
+fs_num = np.asarray([np.asarray(arrays[0][k]) for k in range(len(arrays[0]))])
 fs_exact = np.zeros(shape = sexact, dtype = 'f')
-fs_exact = np.asarray([np.asarray(arrays[k]) for k in range(len(arrays[1]))])
-print("Arrays with numeric/exact datas: ", arrays)
-pprint("With sizes: ", sizes)
-if debuging_smth:
-    pprint(arrays)
+fs_exact = np.asarray([np.asarray(arrays[1][k]) for k in range(len(arrays[1]))])
 
-#for j in 
-x = np.linspace(dl, dr, sizes[0][0])
+numeric_array = arrays[0]
+exact_array = arrays[1]
+x = np.linspace(dl, dr, one(sizes[0][0]))
+if debuging_smth:
+    for k in range(max(len(exact_array), len(numeric_array))):
+        print("Arrays with numeric/exact datas: ", len(arrays[0]), "/", len(arrays[1]))
+        print("Array len: ", len(exact_array[k]), "\n",numeric_array[k]) 
+        print("Axe x will be arranged: ", x, "With lenght: \t", len(x))
+        print("First size: ", sizes[0][0])
+        if ssleep:
+            time.sleep(1.5)
 #print(x)Max
 crt = "_with correction"
 change_cor = False #False mean no correction
@@ -356,15 +403,15 @@ files = []
 print(shape_type)
 sshape_type = dir_types[shape_type].strip("/ ")
 #process different shapes and create directories for them
-for (i, type) in enumerate(dir_types):
-    out_folder_path = type
-    print(type)
-    dir_shapes = Path(ani_directory + out_folder_path)
+for (i, itype_of_problem) in enumerate(dir_types):
+    out_folder_path = itype_of_problem
+    print("This type processed as: " , itype_of_problem)
+    dir_shapes = Path(photo_directory + out_folder_path)
     if os.path.exists(dir_shapes):
         pass
     else:
         try:
-            os.mkdir(ani_directory + out_folder_path)
+            os.mkdir(photo_directory + out_folder_path)
         #except FileExistsError as e:
         #    print('File already exists')
         except OSError as e:
@@ -374,18 +421,18 @@ for (i, type) in enumerate(dir_types):
     #Now process every treated_directory
     for processed in file_num:
         if change_cor:
-            png_path = ani_directory + out_folder_path + suffix_to_file.get(i) + crt
+            png_path = photo_directory + out_folder_path + suffix_to_file.get(i) + crt
         else:
-            png_path = ani_directory + out_folder_path + suffix_to_file.get(i)
-        dst_param = os.path.join(ani_directory + out_folder_path, r'parameters_' + str(processed) + '.txt')
+            png_path = photo_directory + out_folder_path + suffix_to_file.get(i)
+        dst_param = os.path.join(photo_directory + out_folder_path, r'parameters_' + str(processed) + '.txt')
         #if os.path.exists(dst_param):
         try: 
             dst_file = open(dst_param, 'w')
         except EOFError as e:
             pass
         files.append(dst_file)
-        src_param = Path(new_cwd + "/src/treated_datas_{0}/parameters_nf{0}.txt".format(processed - 1))
-        print("Copy parameters from:",src_param)
+        src_param = Path(processed_rust_files + "/treated_datas_{0}/parameters_nf{0}.txt".format(processed - 1))
+        print("Copy parameters from:", src_param)
         print("To: ", dst_param)
         print(dir_shapes, png_path)
         print(shutil.copyfile(src_param, dst_param))
@@ -422,7 +469,7 @@ for f in dif_errors:
     f.close()
 for fi in files:
     fi.close()
-"""
+
 """shapes = []                        
 for f_ind, n in enumerate(sizes):
     shape_one = tuple(i for i in sizes[f_ind][0])
