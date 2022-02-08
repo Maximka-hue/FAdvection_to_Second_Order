@@ -241,7 +241,6 @@ fn main() {//-----------------------------------------
             //Ok((String::new()))
         }
 //Now let's read datas and overwrite them more clearly
-
 let mut file_parameters_from_cli = (Vec::<FileParametres>::new(), Vec::<String>::new());
 let calculation_path_as_string = calculation_path.into_os_string().into_string().unwrap();
 let deb_my = advection_modes.2;
@@ -250,16 +249,18 @@ if deb_my {
     file_parameters_from_cli = process_files(&mut file_paths_with_examples, Some(advection_modes.3), 
         Some(advection_modes.0), Some(LETS_DO_PAUSE), Some(calculation_path_as_string)).unwrap();
 }
+//let deb_my = false;
 let calculation_path_as_str = &animation_path.join("datas").into_os_string().into_string().unwrap()[..];
 let number_of_files_with_data = file_parameters_from_cli.1.len();
 let debug_add = advection_modes.2.clone();
 //Begin main calculations
 (file_parameters_from_cli.0, file_parameters_from_cli.1).into_par_iter().zip((0..number_of_files_with_data).into_iter()).for_each(|(data, fi)| {
+    
     let mut my_time_counter = ChooseSleepTime::add_default_time();
     let concrete_digits_data = data.0;
     let paths_to_processed_datas = data.1;
     let calculation_data_path = PathBuf::from(calculation_path_as_str);
-    println!("{:?} {:?}", concrete_digits_data, paths_to_processed_datas);
+    println!("{:?} \n {:?}", concrete_digits_data, Path::new(&paths_to_processed_datas));
 //-------------------------------------------------
 /*&String: file_ith_argument*/let fiarg = &concrete_digits_data; //This ith file from command line!
 /*type*/        let equation = fiarg.eq_type;
@@ -503,7 +504,7 @@ let type_of_correction_program = true;
         show_shape(all_steps, print_npy, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
         save_files(&calculation_anim_path,  vector_time, Some(vector_time_exact), (all_steps, Some(left_domend), Some(right_domend)), Some(print_npy), 
             fi, Some(output_periods), Some(true), Some(true), Some(deb_my));
-        add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(print_npy));
+        let write_res = add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(print_npy));
     });
     println!("Programm had been finished at: {:?}", new_now.duration_since(advection_start));
 }
