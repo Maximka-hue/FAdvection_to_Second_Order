@@ -195,7 +195,8 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
     }
     let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
     let amf: usize = parse_positive_int(amf)? as usize;
-    if ARGUMENTS_PRINT{cyan!("\nCASE_INSENSITIVE: {}\n", case_sensitive);}
+    if ARGUMENTS_PRINT{
+        cyan!("\nCASE_INSENSITIVE: {}\n", case_sensitive);}
 //So the last and most: What I need to get?
 //query- switch case[default false], if there are ! files in terminal- return filled Argumento, else empty;
 //MyConfig will get all other stuff
@@ -208,8 +209,8 @@ pub fn advection_input()  -> MyResult<(Argumento, MyConfiguration)>{
             Argumento{query: String::new(), filenames: (&[]).to_vec(), case_sensitive: false}
         };
     let my_config = if from_files || from_directory {
+        info!("You specified desire to input your own directory/file path for further search");
         let new_patbuf_vec = Vec::<PathBuf>::new();
-       
         MyConfiguration {//this variable suitable for both[from language point]
             search_path: Some(directory_to_files),
             searched_files: new_patbuf_vec,
@@ -316,7 +317,7 @@ pub struct DebOpt{
 type StdtResult<T> = std::result::Result<(Vec<T>, Vec<String>), Box<dyn Error>>;
 pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: Option<bool>, should_sleep: Option<bool>, init_dir: Option<String>) 
 -> StdtResult<FileParametres>
-{
+    {
     let additional_print = if let Some(d) = db{
         d
     }
@@ -403,7 +404,7 @@ Courant number: {data9}  \n\nThis file was {fnum} with path \n{new_buf:?}",data1
                 .build();
         println!("\n{:?\n}", possible_error.ok());
         if additional_print{
-            println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
+            println!("{}{:#?}\n",ansi_term::Colour::Yellow.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
         let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
             (t1, t2, false), new_init_data[3].parse::<i8>().unwrap(), new_init_data[4].parse::<i8>().unwrap(), (i1, i2, i3, 0_f64),
             new_init_data[6].parse::<f64>().unwrap(), new_init_data[7].parse::<f64>().unwrap(),
@@ -413,9 +414,10 @@ Courant number: {data9}  \n\nThis file was {fnum} with path \n{new_buf:?}",data1
                 println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
             //then push all in earlier created vector for storing processed files
             files_vecs.lock().unwrap().push(all_datas.clone());
+            
             });
 //Processed data 
-    return});
+    });
 let result = files_vec.lock().unwrap().to_vec().clone();
 let message_from_thread="The child thread ID: ".to_string();
 let len_dots= message_from_thread.len();
@@ -663,7 +665,7 @@ let smax: f64 = match equation{
             inner_vector.resize(all_steps, 0.0);
                 for n in  0..all_steps {
                     let x_next = start_left + n as f64 * dx;
-                    vprevious[n] = x_next * alpha + c;
+                    vprevious[n] = x_next.mul_add(alpha, c);
                     info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
                 }
                 first_ex.copy_from_slice(&vprevious[..]);
@@ -778,8 +780,8 @@ let smax: f64 = match equation{
             second_ex.resize(all_steps, 0.0);
             inner_vector.resize(all_steps, 0.0);
             for n in  0..all_steps {
-                let x_next = start as f64+ n as f64 * dx;
-                vprevious[n] = x_next * alpha + c;
+                let x_next = start as f64 + n as f64 * dx;
+                vprevious[n] = x_next.mul_add(alpha, c);
                 info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
             }
             first_ex.copy_from_slice(&vprevious[..]);
@@ -1023,7 +1025,9 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
                 }
                     vector_time[next_vec_index] = inner_vector[on_line].clone();
                 println!("vector_time[next_vec_index]: {}", vector_time[next_vec_index]);
-        thread::sleep(Duration::from_secs(1_u64));
+                if my_deb{
+                    thread::sleep(Duration::from_secs(1_u64));
+                }
                     vector_time_exact[next_vec_index] = first_ex[on_line].clone();
                     if my_deb{
                         println!("current x_index {}, time in exact_vector: {} & time in vector: {}", next_vec_index, vector_time_exact[next_vec_index],
