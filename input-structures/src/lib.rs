@@ -947,7 +947,7 @@ pub fn monotization_c(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f6
     }
 }
 //-----------------------------------------------------------------------------------
-pub fn do_exact_solutions(equation: i8, all_steps: usize, start_left: f64, dx: f64, curtime_on_dt: f64, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
+pub fn do_exact_solutions(equation: i8, all_steps: usize, start_left: f64, dx: f64, curtime_on_dt: f64, velocity: f64, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
     vprevious: &mut Vec<f64>, first_ex: &mut  Vec<f64>, second_ex: &mut Vec<f64>)// -> (Vec<f64>, Vec<f64>, Vec<f64>)
     {
     let mut l: f64;
@@ -955,7 +955,7 @@ pub fn do_exact_solutions(equation: i8, all_steps: usize, start_left: f64, dx: f
     let mut x_next: f64;
     //let mut h = (all_steps as f64/ print_npy as f64).floor() as usize;
     for k in 0 .. all_steps {
-        x_next = start_left + k * dx;
+        x_next = start_left + k as f64 * dx;
         l =  k as f64 - curtime_on_vel.floor();
         if equation == 0 {
             //On which side exact solution will disapear? depends on sgn velocity
