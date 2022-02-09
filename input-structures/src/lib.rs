@@ -625,14 +625,14 @@ let smax: f64 = match equation{
             2 =>  //Manage with some differences*
             {pt!(format!("{}", ansi_term::Style::new().underline().paint("Гауссова волна под уравнение переноса")));
             let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
+            let cnt_tmp: f64 = 1.0/(width.powi(3) * (std::f64::consts::PI * 2_f64).sqrt());
             let start: usize = 0;   //this is integer parameter:left/right boundary in programm
             for n in  0..steps {
-                let x_next: f64 = start as f64 + n as f64 * dx;//this needed to be on "domain" scale
-                vprevious[n] = cnt * (-((x_next as f64 - centre).powi(2))/
-                    (2.0 * width.powi(2))).exp();//exp^self  
+                let x_next: f64 = start_left as f64 + n as f64 * dx;//this needed to be on "domain" scale
+                vprevious[n] = cnt * (-  ((x_next as f64 - centre).powi(2)  ) / (2.0 * width.powi(2))).exp();//exp^self  
                 println!("This is copy from slice*: {}", first_ex[n]);
-                temporary[n] = - cnt * (-((x_next as f64 - centre).powi(2))/
-                    (2.0 * width.powi(6))).exp();
+                temporary[n] = - cnt_tmp * (-((x_next as f64 - centre).powi(2))/
+                    (2.0 * width.powi(2))).exp();
                 info!("Gauss: Step: {} - Value: {} ", n, vprevious[start + n ]);
             }
             first_ex = vprevious.clone();
@@ -655,14 +655,15 @@ let smax: f64 = match equation{
                 first_ex[..].copy_from_slice(&vprevious[..]);
             //else{panic!("Too extensive domain!");}
             },
-            4 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение переноса")));
-            let alpha = centre.clone();//For clarity
-            let c = width.clone();
-            all_steps = steps;
-            vprevious.resize(all_steps, 0.0);
-            first_ex.resize(all_steps, 0.0);
-            second_ex.resize(all_steps, 0.0);
-            inner_vector.resize(all_steps, 0.0);
+            4 => {
+                pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение переноса")));
+                let alpha = width.clone();//For clarity
+                let c = height.clone();
+                all_steps = steps;
+                vprevious.resize(all_steps, 0.0);
+                first_ex.resize(all_steps, 0.0);
+                second_ex.resize(all_steps, 0.0);
+                inner_vector.resize(all_steps, 0.0);
                 for n in  0..all_steps {
                     let x_next = start_left + n as f64 * dx;
                     vprevious[n] = x_next.mul_add(alpha, c);
@@ -737,17 +738,16 @@ let smax: f64 = match equation{
                     let max_value = *vprevious.iter().max_by(|a, b| a.total_cmp(b)).expect("Problem with Burger in type one"); 
                     max_value},
             2 =>  //Manage with some differences*
-            {
-                for n in 0..steps {
-                    x_next = n;
-                    let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
-                    //x_next = start + n as f64 * dx;//this neede to be on "domain" scale
-                    vprevious[n] = cnt * (-((x_next as f64 - centre).powi(2))/
-                        (2.0 * width.powi(2))).exp();//exp^self  
-                    println!("This is copy from slice*: {}", first_ex[n as usize]);
-                    temporary[n as usize] = -cnt * (-((x_next as f64  - centre).powi(2))/
-                        (2.0 * width.powi(6))).exp();
-                    info!("Gauss: Step: {} - Value: {} ", n, vprevious[(start + n) as usize]);
+            {   let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
+                let cnt_tmp: f64 = 1.0/(width.powi(3) * (std::f64::consts::PI * 2_f64).sqrt());
+                let start: usize = 0;   //this is integer parameter:left/right boundary in programm
+                for n in  0..steps {
+                    let x_next: f64 = start_left as f64 + n as f64 * dx;//this needed to be on "domain" scale
+                    vprevious[n] = cnt * (-  ((x_next as f64 - centre).powi(2)  ) / (2.0 * width.powi(2))).exp();//exp^self  
+                    println!("This is copy from slice*: {}", first_ex[n]);
+                    temporary[n] = - cnt_tmp * (-((x_next as f64 - centre).powi(2))/
+                        (2.0 * width.powi(2))).exp();
+                    info!("Gauss: Step: {} - Value: {} ", n, vprevious[start + n ]);
                 }
                 first_ex = vprevious.clone();
                 let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
@@ -771,24 +771,25 @@ let smax: f64 = match equation{
             info!("Max value in array with sinusoid: {}", maxvalue);
             println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
                                     maxvalue},
-            4 => {pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение Бюргерсса")));
-            let alpha = centre.clone();//For clarity
-            let c = width.clone();
-            all_steps = steps;
-            vprevious.resize(all_steps, 0.0);
-            first_ex.resize(all_steps, 0.0);
-            second_ex.resize(all_steps, 0.0);
-            inner_vector.resize(all_steps, 0.0);
-            for n in  0..all_steps {
-                let x_next = start as f64 + n as f64 * dx;
-                vprevious[n] = x_next.mul_add(alpha, c);
-                info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
-            }
-            first_ex.copy_from_slice(&vprevious[..]);
-            let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
-            info!("Max value in array with lines: {}", maxvalue);
-            println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
-                                        maxvalue},
+            4 => {
+                pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение Бюргерсса")));
+                let alpha = width.clone();//For clarity
+                let c = height.clone();
+                all_steps = steps;
+                vprevious.resize(all_steps, 0.0);
+                first_ex.resize(all_steps, 0.0);
+                second_ex.resize(all_steps, 0.0);
+                inner_vector.resize(all_steps, 0.0);
+                for n in  0..all_steps {
+                    let x_next = start as f64 + n as f64 * dx;
+                    vprevious[n] = x_next.mul_add(alpha, c);
+                    info!("Line: Step: {} - Value: {} ", n, vprevious[n as usize]);
+                }
+                first_ex.copy_from_slice(&vprevious[..]);
+                let maxvalue = vprevious.iter().cloned().fold(0./0., f64::max);
+                info!("Max value in array with lines: {}", maxvalue);
+                println!("MAXIMUM VALUE: {}", maxvalue);//??Why not this as usual max value 1 on y axis??
+                    maxvalue},
     _ => panic!("Initial equation condition incorrect") ,
     }; 
     fsmax}, 
