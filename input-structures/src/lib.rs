@@ -514,7 +514,8 @@ pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &st
     }
     let elapsed_in = init_t.elapsed();
     if debug_init{
-    println!("Creating arrays took: {:.2?}", elapsed_in);}
+    println!("Creating arrays took: {:.2?}", elapsed_in);
+    }
     info!("Start in determining initial shape");
     let mut first_ex = exact_solvec[0].clone();
     let mut second_ex = exact_solvec[1].clone();
@@ -626,7 +627,6 @@ let smax: f64 = match equation{
             {pt!(format!("{}", ansi_term::Style::new().underline().paint("Гауссова волна под уравнение переноса")));
             let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
             let cnt_tmp: f64 = 1.0/(width.powi(3) * (std::f64::consts::PI * 2_f64).sqrt());
-            let start: usize = 0;   //this is integer parameter:left/right boundary in programm
             for n in  0..steps {
                 let x_next: f64 = start_left as f64 + n as f64 * dx;//this needed to be on "domain" scale
                 vprevious[n] = cnt * (-  ((x_next as f64 - centre).powi(2)  ) / (2.0 * width.powi(2))).exp();//exp^self  
@@ -686,7 +686,7 @@ let smax: f64 = match equation{
             0 => {
                 println!("{}", ansi_term::Colour::Yellow.underline().paint("Ступенька под уравнение <Бюргеррса>"));
                 for n in 0..dip+1 {
-                    let mut x_next = start + n;
+                    x_next = start + n;
                     vprevious[x_next] = height.max(-height);
                     first_ex[x_next] = height.max(-height);
                 if dip<30{
@@ -740,7 +740,6 @@ let smax: f64 = match equation{
             2 =>  //Manage with some differences*
             {   let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
                 let cnt_tmp: f64 = 1.0/(width.powi(3) * (std::f64::consts::PI * 2_f64).sqrt());
-                let start: usize = 0;   //this is integer parameter:left/right boundary in programm
                 for n in  0..steps {
                     let x_next: f64 = start_left as f64 + n as f64 * dx;//this needed to be on "domain" scale
                     vprevious[n] = cnt * (-  ((x_next as f64 - centre).powi(2)  ) / (2.0 * width.powi(2))).exp();//exp^self  
@@ -948,33 +947,47 @@ pub fn monotization_c(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f6
     }
 }
 //-----------------------------------------------------------------------------------
-pub fn do_exact_solutions (equation: i8, all_steps: usize, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
+pub fn do_exact_solutions(equation: i8, all_steps: usize, start_left: f64, dx: f64, curtime_on_dt: f64, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
     vprevious: &mut Vec<f64>, first_ex: &mut  Vec<f64>, second_ex: &mut Vec<f64>)// -> (Vec<f64>, Vec<f64>, Vec<f64>)
     {
     let mut l: f64;
     let mut l_new: usize;
+    let mut x_next: f64;
     //let mut h = (all_steps as f64/ print_npy as f64).floor() as usize;
     for k in 0 .. all_steps {
-        if equation ==0 {
-            l =  k as f64 - curtime_on_vel;
+        x_next = start_left + k * dx;
+        l =  k as f64 - curtime_on_vel.floor();
+        if equation == 0 {
+            //On which side exact solution will disapear? depends on sgn velocity
+            if velocity <=0.0 {
+                if l >= all_steps as f64 {
+                    l_new = (l % all_steps as f64) as usize;
+                    second_ex[k] = first_ex[l_new].clone();
+                }
+                else {
+                    l_new = if l >= 0.0 {l as usize} else { (all_steps as f64 + l) as usize};
+                    second_ex[k] = first_ex[l_new].clone();
+                }
             if deb_my { 
                 println!("l: {}, curtime_on_vel: {}", l, curtime_on_vel);
             }
-            if l >= all_steps as f64 {
-                l_new = ((l % all_steps as f64).abs()) as usize;
+        }
+        else if velocity >0.0 {
+            if l <= 0 as f64 {
+                l_new = (l % all_steps as f64).abs() as usize;
                 second_ex[k] = first_ex[l_new].clone();
-                l = l_new as f64;
-            } 
+            }
             else {
                 l_new = if l >= 0.0 {l as usize} else { (all_steps as f64 + l) as usize};
                 second_ex[k] = first_ex[l_new].clone();
             }
         }
-        else if equation == 1 {
+    }
+    else if equation == 1 {
+        first_ex[k]= (alpha * x_next as f64 + c)/
+            (alpha * curtime_on_dt + 1.0);
+        println!("Exact vector: {}", first_ex[k]);
             //This will work **Only** with lines initial forms
-            first_ex[k]= (alpha * k as f64 + c)/
-                    (alpha * curtime_on_vel + 1.0);
-            println!("Exact vector: {}", first_ex[k]);
             //Is it needed to live after reaching boundary?
         }
     }   
