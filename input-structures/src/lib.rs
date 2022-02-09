@@ -1006,6 +1006,7 @@ pub fn make_vec_output(dtotal_loop_nanos: i64){
     if dtotal_loop_nanos - chrono::Duration::seconds(1).num_nanoseconds().unwrap() > 0 {
 }
 }
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current_time_on_dt: f64, hor_time_step: usize,
     mut x_index: usize, mut time_output_precised_secs: f64, 
     vector_time: &mut Vec<f64>, vector_time_exact: &mut Vec<f64>, inner_vector: &Vec<f64>, first_ex: &Vec<f64>,
@@ -1017,9 +1018,6 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
             false
         };
 //This function determine one horizont layer over unit of time
-    if my_deb{
-        println!("ST: {}", current_time_on_dt - time_output_precised_secs);
-    }
     if (current_time_on_dt - time_output_precised_secs) > 0.0 {
         let mut on_line: usize;
         let mut next_vec_index: usize;
@@ -1029,7 +1027,7 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
         else{
             all_steps
         };
-            for k in 0 .. print_npy {
+            for k in 0 .. all_step_size {
             //step over whole horizontal line
                 on_line = k * hor_time_step as usize;
             //This measure step as in one_dimentional array
@@ -1039,7 +1037,7 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
                 }
                     vector_time[next_vec_index] = inner_vector[on_line].clone();
                 println!("vector_time[next_vec_index]: {}", vector_time[next_vec_index]);
-                if my_deb{
+                if false{
                     thread::sleep(Duration::from_secs(1_u64));
                 }
                     vector_time_exact[next_vec_index] = first_ex[on_line].clone();
@@ -1050,14 +1048,14 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
                         //thread::sleep(time::Duration::from_millis(400_u64));
                         //println!("Получившиеся значения с шагом {} равны {}\n", k, Vector_time[k+x_index as usize]);
                 }//Last step will be exact...
-                vector_time[x_index + print_npy] = inner_vector[all_steps-1];
-                vector_time_exact[x_index + print_npy] = first_ex[all_steps-1];
+                vector_time[x_index + all_step_size] = inner_vector[all_steps-1];
+                vector_time_exact[x_index + all_step_size] = first_ex[all_steps-1];
                     //will be print_npy + 1 every time
-                    x_index= x_index + print_npy as usize;
+                x_index = x_index + all_step_size as usize;
         time_output_precised_secs += time_output_precised_secs;
         }
         else{
-
+            println!("{} {}\n", ansi_term::Colour::Purple.underline().paint("Left time for recording:"), current_time_on_dt - time_output_precised_secs);
         }
     println!("Value of x_index: {}", x_index);
 //as it from beginning had value i, then will be 2i, 3i...
