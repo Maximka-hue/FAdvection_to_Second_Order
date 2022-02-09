@@ -286,8 +286,8 @@ if ssleep:
 print("Shape of file array: ", fn.shape)
 if debuging_smth:
     print(fn)
-#This will store for all files(extern 5) exact and numeric solutions/sizes(random)
-arrays = [[[],[]] , [[],[]], [[],[]], [[],[]], [[],[]]]
+#This will store for all files(extern 5) exact and numeric(2) solutions/sizes(random)
+arrays = [[[],[]] , [[],[]], [[],[]], [[],[]], [[],[]]]#[  1  dir_types [  2 numeric/exact  [  3 y values  ]]]
 sizes = [[[],[]] , [[],[]], [[],[]], [[],[]], [[],[]]]
 numeric_field = " numv"
 exact_field = " exv"
@@ -385,13 +385,16 @@ fs_num = np.asarray([np.asarray(arrays[0][k]) for k in range(len(arrays[0]))])
 fs_exact = np.zeros(shape = sexact, dtype = 'f')
 fs_exact = np.asarray([np.asarray(arrays[1][k]) for k in range(len(arrays[1]))])
 
-numeric_array = arrays[0]
-exact_array = arrays[1]
+typed_array_numeric = arrays[0]
+typed_array_exact =arrays[1]
+
 x = np.linspace(dl, dr, one(sizes[0][0]))
 if debuging_smth:
-    for k in range(max(len(exact_array), len(numeric_array))):
-        print("Arrays with numeric/exact datas: ", len(arrays[0]), "/", len(arrays[1]))
-        print("Array len: ", len(exact_array[k]), "\n",numeric_array[k]) 
+    for k in range(max(len(typed_array_numeric[0]), len(typed_array_exact[1]))):
+        numeric_array = typed_array_numeric[0][k]#This is 1 dimensional array
+        exact_array = typed_array_exact[1][k]
+        print("Arrays with numeric/exact datas: ", len(numeric_array), "/", len(exact_array))
+        print("Value of ", k, " is: ", exact_array, "\n", numeric_array) 
         print("Axe x will be arranged: ", x, "With lenght: \t", len(x))
         print("First size: ", sizes[0][0])
         if ssleep:
@@ -402,7 +405,7 @@ change_cor = False #False mean no correction
 files = []
 print(shape_type)
 sshape_type = dir_types[shape_type].strip("/ ")
-#process different shapes and create directories for them
+#process different shapes and create directories for them (5)
 for (i, itype_of_problem) in enumerate(dir_types):
     out_folder_path = itype_of_problem
     print("This type processed as: " , itype_of_problem)
@@ -439,7 +442,9 @@ for (i, itype_of_problem) in enumerate(dir_types):
         if ssleep:
             time.sleep(3) 
         #And now process the array itself
-        for k in range(len(arrays[1])):
+        for k in range(len(typed_array_numeric[0])):
+            numeric_array = typed_array_numeric[0][k]
+            exact_array = typed_array_exact[1][k]
             png_path_k = png_path + str(k)
             plt.legend(["Exact solution","Numeric solution"],loc='upper left')
             plt.xlabel('Distance on x axis')
@@ -448,9 +453,9 @@ for (i, itype_of_problem) in enumerate(dir_types):
                 plt.title(out_folder_path + ' type'+ crt)
             else:
                 plt.title(out_folder_path + ' type')
-            plt.plot(x, arrays[0][k],'go--', linewidth=4, markersize=3, alpha = 0.7, animated ='true',
+            plt.plot(x, numeric_array,'go--', linewidth=4, markersize=3, alpha = 0.7, animated ='true',
                 markerfacecoloralt = 'y', fillstyle =  'full', marker = "D")
-            plt.plot(x, arrays[1][k],'yo--', linewidth=2.5, markersize=3, alpha = 0.5, animated ='true',
+            plt.plot(x, exact_array,'yo--', linewidth=2.5, markersize=3, alpha = 0.5, animated ='true',
                 markerfacecoloralt = 'b', fillstyle =  'full', marker = "X")
             #plt.pause(0.1)
             try:
