@@ -242,7 +242,8 @@ pub fn create_output_dir(mut fnum: usize, num_files: usize, should_sleep: bool, 
     fs::create_dir_all(&new_path).unwrap();
     let parameter_file = new_path.join(format!(r"parameters_nf{}.txt", fnum));
     fnum +=1;
-    let processed_params =  fs::OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&parameter_file).unwrap_or_else(|error| {
+    let processed_params =  File::create(&parameter_file).unwrap_or_else(|error| {
+    //Not thread safe! fs::OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&parameter_file).unwrap_or_else(|error| {
         if error.kind() == ErrorKind::NotFound {
             File::create(&parameter_file).unwrap_or_else(|error| {
                 panic!("Problem creating the file: {:?}", error);
@@ -500,7 +501,7 @@ pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactve
         pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
             }
 
-fn create_safe_file_with_options(path: PathBuf, create: bool) -> Result<std::fs::File, std::io::Error>{
+pub fn create_safe_file_with_options(path: PathBuf, create: bool) -> Result<std::fs::File, std::io::Error>{
     let file = if create {
         OpenOptions::new().create(true).write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
         if error.kind() == ErrorKind::NotFound {
@@ -586,6 +587,7 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
             create_safe_file_with_options(expypath, true)?;
             exact_vector= ex;
         }
+
 //This will create csv like txt files to turn them in paraview window ------------------------------------
         if paraview_format.unwrap_or(false){
             let switch_path_paraview = dir.join("paraview_datas");
@@ -611,24 +613,24 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
                         println!("switch_path_x_u_w : {:?}", updating_x_u_w);
                     }
                     println!("Listing '{}'", path.display());
-                    let mut paraview_file_x_u_w = create_safe_file_with_options(updating_x_u_w, true)?;//superfluously
+                    let mut paraview_file_x_u_w = std::fs::File::create(updating_x_u_w)?;//superfluously
                     println!("{:?}" , paraview_file_x_u_w);
                     paraview_file_x_u_w.write_all("x, exv, numv\n".as_bytes())?;
                     for k in 0..raw_size {
                         on_line = h*k;
                         x_next = left + on_line as f64;
                         next_index = k + y_index * raw_size;
-                        string_raw = format!(r"{}, {}, {}{}",
+                        string_raw = format!(r"{:.6}, {:.6}, {:.6}{}",
                             x_next, exact_vector[next_index], tvector[next_index], "\n");
                         paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
                     }
                     if y_index != end_of_traverse-1{
-                        string_raw = format!(r"{}, {}, {}{}", 
+                        string_raw = format!(r"{:.6}, {:.6}, {:.6}{}", 
                             steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size], "\n");
                         paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
                     }
                     else{
-                        string_raw = format!(r"{}, {}, {}{}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1], "\n");
+                        string_raw = format!(r"{:.6}, {:.6}, {:.6}{}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1], "\n");
                         paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
                     }
                 }
@@ -651,6 +653,7 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
 
         Ok(())
 }
+
 pub fn add_additional_info_in_datas_end(dir: &PathBuf, nf: usize, t_max: Option<f64>,  elements_per_raw: Option<usize>)-> std::io::Result<()>{
     let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
         elements_per_raw
@@ -721,50 +724,6 @@ pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
     }
 }
 /*
-fn wf(_path: Option<&Path>) -> Result<(), Error> {
-    let current_dir = env::current_dir()?;
-    println!(
-        "Let's get access to current dir)\nEntries modified in the last 1 hour in {:?}:",
-        current_dir);
-    for entry in fs::read_dir(current_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        let metadata = fs::metadata(&path)?;
-        let last_modified = metadata.modified()?.elapsed().unwrap().as_secs();
-
-        if last_modified < 1 * 3600 && metadata.is_file() && path.ends_with(".rs") || path.ends_with("txt"){
-            println!(
-                "Last modified: {:?} seconds,
-                is read only: {:?},
-                size: {:?} bytes,
-                filename: {:?}",
-                last_modified,
-                metadata.permissions().readonly(),
-                metadata.len(),
-                path.file_name().ok_or("No filename").expect("File wf error"),
-            );
-        }
-    let path_to_read = Path::new("save_some_statistic.txt");
-    let stdout_handle = Handle::stdout()?;
-    let handle = Handle::from_path(path_to_read)?;
-
-    if stdout_handle == handle {
-        return Err(Error::new(
-            ErrorKind::Other,
-            "You are reading and writing to the same file",
-        ));//"You are reading and writing to the same file"
-    } else {
-        
-        let file = File::open(&path_to_read)?;
-        let file = BufReader::new(file);
-        for (num, line) in file.lines().enumerate() {
-            println!("{} : {}", num, line?.to_uppercase());
-        }
-    }
-    }    Ok(())
-}
-///Some almost usefulness stuff 
 fn goodbye() -> String {
     "さようなら".to_string()
 }
