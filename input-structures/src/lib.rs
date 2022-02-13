@@ -1252,12 +1252,3 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
 //as it from beginning had value i, then will be 2i, 3i...
     (x_index, y_index, new_output_time_rate)
     }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
