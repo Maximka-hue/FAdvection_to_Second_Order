@@ -14,7 +14,7 @@ extern crate time;
 use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_macros::macro_lrls::{pt}};
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
-use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, 
+use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, create_safe_file_with_options, 
     op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files, add_additional_info_in_datas_end};
 use input_structure::{TaskType, TaskTypeCs, FileParametres, initial_information_of_advection, 
     advection_input, process_files, main_initialization, do_exact_solutions,
@@ -27,7 +27,7 @@ extern crate tcprint;
 extern crate ansi_term;
 extern crate num_cpus;
 extern crate rand;
-extern crate env_logger;
+use env_logger;
 extern crate log;
 use log::{debug, error, info, warn};
 extern crate walkdir;
@@ -38,7 +38,7 @@ use gtk::{Application, ApplicationWindow, Box as GTKBox, Button, Label};
 pub use ansi_term::{Colour::{Fixed, Black as AnsiBlack, Red as AnsiRed, Green as AnsiGreen, Yellow as AnsiYellow, Blue as AnsiBlue, Purple as AnsiPurple, 
     Cyan as AnsiCyan, Fixed as AnsiFixed}, Style as AnsiStyle};
 ///These imports from library as I already downloaded these crates)
-use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env, fs::{self, OpenOptions}, io::{self, Write}};
+use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env, fs::{self, OpenOptions}, io::{self, Write, BufRead, BufReader, BufWriter, Read, Seek}};
 use time::{Duration};
 use chrono::{Duration as CDuration};
 use time::macros::date;
@@ -51,6 +51,7 @@ mod determine_my_impls{
 }
 mod determine_calculation_modes{
 pub const PATH_DEBUG_INFO: bool = true;
+pub const DO_STEP_REDUCE: bool = true;
 pub const PATH_CREATION: bool = true;
 pub const LETS_DO_PAUSE: bool = true;
 pub const GENERATE_RANDOM_EXAMPLE: bool = false;
@@ -127,7 +128,7 @@ fn main() {//-----------------------------------------
     if TIME_OUTPUT{
         println!("App initialization: {:?} {duration:?}", new_now.duration_since(advection_start));
     }
-    let (mut argumento, mut my_config) = from_cli.unwrap();
+    let (argumento, mut my_config) = from_cli.unwrap();
 //-----------------------------------------
 //Here I am defining by default colored struct with task type
     let mut burger_rng = rand::thread_rng();
@@ -250,11 +251,19 @@ if deb_my {
     file_parameters_from_cli = process_files(&mut file_paths_with_examples, Some(advection_modes.3), 
         Some(advection_modes.0), Some(LETS_DO_PAUSE), Some(calculation_path_as_string)).unwrap();
 }
-//let deb_my = false;
+let deb_my = false;
 let calculation_path_as_str = &animation_path.join("datas").into_os_string().into_string().unwrap()[..];
 let number_of_files_with_data = file_parameters_from_cli.1.len();
-let debug_add = advection_modes.2.clone();
-//Begin main calculations
+let debug_add = true;
+let all_exact_record = true;  
+let exp_path = Path::new("/home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order/advection/src/animation/exper");
+let exp_buf = PathBuf::from(exp_path);
+if all_exact_record{
+    fs::create_dir_all(exp_path).unwrap();
+}
+std::env::set_var("RUST_LOG", "advection=debug");
+env_logger::init();
+//Begin main calculations +++++++++++++++++++++++++++++++++++++++++++++++++++++++++====
 (file_parameters_from_cli.0, file_parameters_from_cli.1).into_par_iter().zip((0..number_of_files_with_data).into_iter()).for_each(|(data, fi)| {
     
     let mut my_time_counter = ChooseSleepTime::add_default_time();
@@ -281,9 +290,13 @@ let type_of_correction_program = true;
     //In any way in process_clfile I had written TRANSFER, so i can switch it there
     //But more convienient as I suppose that if TRANSFER=0_f32, then switch)  
     let veloc: f64 = match velocity_t.expect("Maybe velocity not specified"){
-        TaskType::Transfer{a} => {if debug_add{println!("Speed: {}", a);
+        TaskType::Transfer{a} => {
+            if debug_add{
+                println!("Speed: {}", a);
                 if LETS_DO_PAUSE{
-                    my_time_counter.add_duration(1, None);}} 
+                    my_time_counter.add_duration(1, None);
+                }
+            } 
                 a},
         TaskType::Burger(a, b) => {println!("However, this is burger equation: {:?} {:?}", a, b); 0_f64},
     };
@@ -314,6 +327,7 @@ let type_of_correction_program = true;
         1 => 0.0, //Further in main cycle will determine this
         _ => 0.0
     };
+    println!("fuuuu: {fuu}, {veloc}");
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     let output_time_max = time_ev.0;
     let mut output_time_rate = time_ev.1;
@@ -337,7 +351,7 @@ let type_of_correction_program = true;
             1 => if possgn_smax {co * dx/(smax)} else {co * dx/(-smax)},
             _ => panic!("Not type match")
         };
-        let dt = if dt_from_init< 0.001 {panic!("t step too small, please coreect initial conditions")} 
+        let dt = if dt_from_init< 0.000001 {panic!("t step too small, please coreect initial conditions")} 
         else{
             dt_from_init
         };
@@ -345,7 +359,7 @@ let type_of_correction_program = true;
     let height = (output_time_max as f64 / dt as f64).ceil() as usize;
     let width = if SIMPLE_STEP_TYPE {steps} else { steps + 2_usize};
     let smooth_correction: bool = advection_modes.1;
-    let smooth_intensity = 0.5;
+    let smooth_intensity = 0.2;
     let left_domend = domain.0;
     let right_domend = domain.1;
     let centre_mat_expect = i_parameters.0;
@@ -371,7 +385,7 @@ let type_of_correction_program = true;
         let mut vector_time: Vec<f64>= if !switch_time {
             //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
             //Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
-            vec![0_f64; (output_time_max as f64 * all_steps as f64/ output_time_rate as f64).ceil() as usize] // print_npy as f64
+            vec![0_f64; (output_time_max as f64 / (output_time_rate as f64 * dt as f64)) as usize + 100_usize] // print_npy as f64
         }
             else{
                 //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure)
@@ -381,13 +395,15 @@ let type_of_correction_program = true;
         let mut vector_time_exact = if !switch_time {
             //What that size? Out_time / time_rate = #amount of times to output, so this must be * on amount of elements per horizontal
             //Vec::<f64>::with_capacity((output_time_max as f64 * print_npy as f64/ output_time_rate as f64).ceil() as usize)
-            vec![0_f64; (output_time_max as f64 * all_steps as f64/ output_time_rate as f64).ceil() as usize]// print_npy as f64
+            vec![0_f64; (output_time_max as f64/ (output_time_rate as f64 * dt as f64)) as usize + 100_usize]// print_npy as f64
         }
             else{
                 //What that size? This depends on cycle time as output_time_rate(cycle time as unit of measure) but this will be 
                 //measured in main cycle after conditional time
                 Vec::new()
         };
+
+    let do_step_reduce_now = DO_STEP_REDUCE;
     let dir_to_graphics: PathBuf = calculation_data_path.join("datas");
     show_shape(all_steps, print_npy, &vprevious, &first_ex, &calculation_data_path, fi, "This is the time after initializing shape", Some("the_beggining_shape"), deb_my);
     if deb_my{
@@ -400,7 +416,11 @@ let type_of_correction_program = true;
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
         let mut exact_float_time_dif: f64 = output_time_max;
 //This means step by which aliquot will be reported in time vec(horizontal step)
-        let mut hor_time_step = (all_steps as f64/ print_npy as f64).floor() as usize;
+        let mut hor_time_step = if do_step_reduce_now {
+            (all_steps as f64/ print_npy as f64).floor() as usize}
+            else{
+                1 as usize
+            };
         let begin_of_main= Instant::now(); 
         let mut new_now = std::time::Instant::now();
         let mut curtime_on_vel = 0.0;            
@@ -412,9 +432,25 @@ let type_of_correction_program = true;
     let mut begin_of_cycle; 
     let mut cycle_time = chrono::Duration::nanoseconds(0);
     let mut cycle_time_nanos: i64 = cycle_time.num_nanoseconds().unwrap();
+    let mut fi_exp_path = PathBuf::new();
+    fi_exp_path = exp_path.join(format!("exp_{}", fi));
+    let fi_exp_path_update = fi_exp_path.clone();
+    if all_exact_record{
+        fs::create_dir_all(fi_exp_path).unwrap();
+    }
+    let mut output_time_rate_add_calc = output_time_rate;
+    let mut output_time_rate_add = output_time_rate;
         println!("Approximate equal to 3 float digits? - {}", approx_equal(time_dif_in_secs, 0.0, 3));
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         'main_cycle: while exact_float_time_dif > 0.0 {
+        let updating_x_u_w =  if all_exact_record{
+            Some(fi_exp_path_update.join(format!("x_u_w_{0}=itype{1}={2}.txt", fi, i_type, period)))
+        }
+        else{ None };
+        let buf_def = PathBuf::from(format!("/home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order/advection/src/animation/datas/example_datas/differ_errors_{0}", fi));
+        let new_buf_def = buf_def.clone();
+        fs::create_dir_all(new_buf_def).unwrap();
+        let mut union_x_u_w = std::fs::File::create(updating_x_u_w.unwrap()).unwrap();
         println!("exact_float_time_dif {}\n current_time_on_dt - output_time_rate {}", exact_float_time_dif, current_time_on_dt - output_time_rate);
         if SHOULD_SLEEP_IN_MAIN{thread::sleep(SDuration::from_secs(1_u64));}
             begin_of_cycle = Instant::now();
@@ -426,22 +462,26 @@ let type_of_correction_program = true;
             }
             //thread::sleep(SDuration::from_millis(200_u64));
             curtime_on_vel = current_time_on_dt * fuu;
-            let mut x_next: f64;
-//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-            do_exact_solutions(equation, all_steps, left_domend, dx, current_time_on_dt, fuu, curtime_on_vel, width_alpha, height_init,
-                deb_my,  &mut vprevious, &mut first_ex, &mut second_ex);
-//------------------------------------------------------------------------------
+            union_x_u_w.write_all("x, exv, numv\n".as_bytes()).unwrap();
+            let write_gen = true;
 //Simply calculate second layer based on previous one
             if !correction{
-                main_cycle_first_order(&mut vprevious, &mut inner_vector, fuu, fu_next, fu_prev, dt, dx, equation, bound, a_positive, possgn_smax, 
-                    all_steps, deb_my);
+                output_time_rate_add = main_cycle_first_order(&mut vprevious, &mut inner_vector, &mut first_ex, &mut union_x_u_w, fuu, fu_next, fu_prev, dt, dx,
+                    equation, bound,curtime_on_vel, current_time_on_dt, output_time_rate_add, output_time_rate, a_positive, possgn_smax, i_type,
+                    left_domend, width_alpha, height_init, all_steps, &buf_def, period, deb_my, write_gen,fi).expect("Nothing special");
+                    //println!("vprevious: {:?}\n inner_vector: {:?}", vprevious, inner_vector);
                 }
 //Otherwise  calculate  with correction
             else{
-                main_cycle_with_correction(&mut vprevious, &mut inner_vector, &mut prediction, &mut first_correction, &mut second_correction, 
-                    fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, bound,
-                    all_steps, deb_my, type_of_correction_program, smooth_intensity);
-            }
+                output_time_rate_add = main_cycle_with_correction(&mut vprevious, &mut inner_vector, &mut prediction, &mut first_correction, &mut second_correction, &mut first_ex,
+                    fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, bound, 
+                    all_steps, deb_my, type_of_correction_program, smooth_intensity, width_alpha, height_init, a_positive, period, i_type, fi, &mut union_x_u_w, &buf_def, left_domend,
+                    curtime_on_vel, current_time_on_dt, output_time_rate_add ,  output_time_rate).expect("Nothing special");
+            }      
+//++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+            do_exact_solutions(equation, all_steps, left_domend, dx, current_time_on_dt, output_time_rate, fuu, curtime_on_vel, width_alpha, height_init,
+                deb_my,  &mut vprevious, &mut first_ex, &mut second_ex);
+//------------------------------------------------------------------------------
             if ADDITION_OF_TIME_VECTORS{
 
             }
@@ -450,16 +490,16 @@ let type_of_correction_program = true;
             }
             //swap them and delete old data
             if deb_my{
-                let vprev_str = vprevious.iter().join("\t");//.iter().map(|s| ToString::from(s)).collect();
+                let vprev_str = vprevious.clone().iter().join("\t");//.iter().map(|s| ToString::from(s)).collect();
+                let inner_vector = inner_vector.clone().iter().join("\t");
                 pt!("Upper and lower layers after cycle: ", "time");
-                pt!(vprev_str);
+                pt!(vprev_str);pt!("/n"); pt!(inner_vector);
             }
             //Calculate time per cycle, remaining and other time
             new_now = std::time::Instant::now();
             let elapsed_in = begin_of_main.elapsed();
-            println!("\nMain calculation: {:?} < {:?}", elapsed_in, new_now.duration_since(begin_of_main));
+            println!("\nMain calculation: {:?} ^ {:?}", elapsed_in, new_now.duration_since(begin_of_main));
             time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
-            let do_step_reduce_now = true;
             if switch_time {
                 //Loops made on real-time 
                 time_dif_in_secs = maxl_time_secs as f64 - elapsed_in.as_secs() as f64;
@@ -471,19 +511,18 @@ let type_of_correction_program = true;
             }
             else{
             //Now let's save datas to create animations further. 
-            (x_index, output_time_rate) = calculate_output_time_vec_based_on_outtime_rate(all_steps, current_time_on_dt, hor_time_step,
-                x_index, output_time_rate, &mut vector_time, &mut vector_time_exact, &vprevious/*because it is current swapped*/, &first_ex,
+            (x_index, y_index, output_time_rate_add_calc) = calculate_output_time_vec_based_on_outtime_rate(all_steps, current_time_on_dt, hor_time_step,
+                x_index, y_index, output_time_rate, output_time_rate_add_calc, &mut vector_time, &mut vector_time_exact, &vprevious/*because it is current swapped*/, &first_ex,
                 do_step_reduce_now, print_npy, Some(deb_my));
                 exact_float_time_dif = output_time_max - current_time_on_dt;
                 time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
                 time_dif_in_secs = maxl_time_secs as f64 - current_time_on_dt;
-                y_index += 1;// output time all times
             //println!("vector_time: \n{:?} ^vector_time_exact: \n{:?}", vector_time, vector_time_exact);
             println!("dt- {}", dt);
         if SHOULD_SLEEP_IN_MAIN{thread::sleep(SDuration::from_secs(1_u64));}
             }
             period+=1_usize;
-            vprevious.clone_from_slice(&inner_vector);
+            vprevious.copy_from_slice(&inner_vector);
             inner_vector = vec![0.0; all_steps];
             current_time_on_dt += dt;// move up
             //Measure real-time from procesing programm
@@ -491,22 +530,51 @@ let type_of_correction_program = true;
             println!("{} ^ {}", processed_time_nanos, maxl_time_secs as f64 - elapsed_in.as_secs() as f64 * cur_period as f64);
             println!("{}", 
                 ansi_term::Colour::Yellow.underline().paint(format!("Real-time elapsed: {processed_time_nanos:6?}")));
-            if vprevious.iter().all(|&v| approx_equal(v, 0.0, 3)){
+            if vprevious.iter().all(|&v| approx_equal(v, 0.0, 7)){
                 warn!("Main cycle has been broken before designated time!-cause all numeric elements equal to zero with 3 digit precision");
                 if vector_time.iter().all(|&v| approx_equal(v, 0.0, 3)) &&
                 vector_time_exact.iter().all(|&v| approx_equal(v, 0.0, 3)){
                     panic!("Nothing has been output in png as output rate too large to fix things now");
-                }
-                break 'main_cycle;
             }
+            break 'main_cycle;
         }
+    }
         let animation_path = env::current_dir().unwrap().join("src").join("animation");
         let calculation_anim_path = animation_path.join("datas");
         let t_maxx = if equation ==0 {None} else {Some(t_max)}; //&vector_time, &vector_time_exact,
-        show_shape(all_steps, print_npy, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
-        save_files(&calculation_anim_path,  vector_time, Some(vector_time_exact), (all_steps, Some(left_domend), Some(right_domend)), Some(print_npy), 
-            fi, y_index, Some(true), Some(true), Some(deb_my));
+        show_shape(all_steps, all_steps, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
+        //save_files(&calculation_anim_path,  vector_time, Some(vector_time_exact), (all_steps, Some(left_domend), Some(right_domend)), Some(print_npy), 
+        //    fi, y_index, Some(true), Some(true), Some(deb_my));
         let write_res = add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(print_npy));
     });
     println!("Programm had been finished at: {:?}", new_now.duration_since(advection_start));
 }
+/* 
+extern crate once_cell;
+extern crate log4rs;
+
+use log::{info, warn, LevelFilter};
+use log4rs::append::file::FileAppender;
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::config::{Appender, Config, Root};
+ANSIByteStrings(&[
+    Green.paint("user data 1\n".as_bytes()),
+    Green.bold().paint("user data 2\n".as_bytes()),
+]).write_to(&mut std::io::stdout()).unwrap();
+let dirs = dirs.map(|file| file.unwrap().path());
+let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .build("log/output.log").unwrap();
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder()
+                   .appender("logfile")
+                   .build(LevelFilter::Info)).unwrap();
+
+    log4rs::init_config(config).unwrap();
+
+    log::info!("Hello, world!");   // more program logic goes here...
+
+}     
+*/
