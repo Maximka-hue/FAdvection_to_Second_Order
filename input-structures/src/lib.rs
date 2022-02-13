@@ -28,7 +28,7 @@ use clap::{ ColorChoice, Arg, ArgGroup, App};
 use clap::{app_from_crate, arg, crate_name};
 use walkdir::{DirEntry};
 use std::time::{Duration, Instant as SInstant};
-use std::{thread, io::Write, fs::{self, File, OpenOptions, read_to_string}, env, error::Error};
+use std::{thread, io::{Write, Seek, SeekFrom}, fs::{self, File, OpenOptions, read_to_string}, env, error::Error};
 use std::sync::{Arc, Mutex};
 use std::collections::HashSet;
 use log::info;
@@ -552,7 +552,7 @@ let example_data_path = Path::new(&calculation_path[..]).join("example_datas");
 //For this I do need: 1 type of equation 2 initial conditions 3 dx(fragmentation) 4velocity(if eq=1) 4 check_flag_for_partition
 if check_flag_for_partition {
     assert!(approx_equal(left + steps as f64 * dx, right, 6));
-    if equation == 0 || equation == 1 {
+    if type_of_initial_cond == 0 || type_of_initial_cond == 1 {
     assert!((centre - (width /2.0)) - left >= 0.0); assert!(right - (centre + (width /2.0)) >= 0.0);
     println!("{}", ansi_term::Style::new().underline().paint("Левая|правая точка треугольник в заданной области"));
     }
@@ -759,7 +759,7 @@ let smax: f64 = match equation{
             let distance= end_right - start_left;
             let mut angle: f64;
             const DOUBLE_PI: f64 = 2.0 * std::f64::consts::PI;
-            for n in  0..all_steps {
+            for n in  0..steps {
                 let x_next = left + n as f64 * dx;
                 angle = x_next as f64 * DOUBLE_PI / distance;
                 vprevious[n] = angle.sin();
@@ -798,14 +798,64 @@ let smax: f64 = match equation{
     println!("Main initialization: {:?} < {:?}", elapsed_in, new_now.duration_since(init_t));
 (first_ex , second_ex , temporary, vprevious, inner_vector, diferr_0, x_v_w_txt_0, x_v_w_csv_0, smax)
 }
+pub fn norm_1(u: &Vec<f64>,w: &Vec<f64>, dx: f64,curtime_on_vel: f64 , all_steps: usize, velocity_pos: bool) -> f64{
+    let mut dif_eq: Vec<f64> = vec![0.0; u.len().max(w.len())];
+    for k in 1..(all_steps){
+    let l = k as f64- (curtime_on_vel/dx).floor();
+    if !velocity_pos{
+        if l >= all_steps  as f64{
+            dif_eq[k] = (u[k] - w[l as usize%all_steps]).abs();
+        }
+        else{
+            dif_eq[k] = (u[k] - w[l as usize]).abs();
+        }
+        }
+    else{
+        if l <= 0.0{
+            dif_eq[k] = (u[k] - w[(l  as usize% all_steps)]).abs();}
+        else{
+            dif_eq[k] = (u[k] - w[l as usize]).abs();
+            }
+        }
+    }
+    let maxvalue = dif_eq.iter().cloned().fold(0./0., f64::max);
+return maxvalue
+}
+
+fn norm_2(u: &Vec<f64>,w: &Vec<f64>, dx: f64,curtime_on_vel: f64 , all_steps: usize, velocity_pos: bool) -> f64{
+    let mut dif_eq: Vec<f64> = vec![0.0; u.len().max(w.len())];
+    for k in 1..(all_steps){
+        let l = k as f64- (curtime_on_vel/dx).floor();
+        if !velocity_pos{
+            if l >= all_steps as f64{
+                dif_eq[k] = (u[k] - w[l as usize%all_steps]).powi(2)}
+            else{
+                dif_eq[k] = (u[k] - w[l as usize]).powi(2)}
+            }
+        else{
+            if l <= 0.0{
+                dif_eq[k] = (u[k] - w[(l as usize% all_steps)]).abs().powi(2);}
+            else{
+                dif_eq[k] = (u[k] - w[l as usize]).powi(2);
+            }
+        }
+    }
+    let sum = dif_eq.into_iter().sum::<f64>().sqrt();
+    return sum
+}
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, dt: f64, dx: f64,
-        equation: i8, bound: i8, a_positive: bool, possgn_smax: bool,
-        all_steps: usize, debug_init: bool){
+pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, first_ex: &mut Vec<f64>, file_to_write: &mut File, fuu: f64, mut fu_next: f64, mut fu_prev: f64, 
+    dt: f64, dx: f64, equation: i8, bound: i8, curtime_on_vel: f64, curtime_on_dt: f64, output_time_max:f64 , output_time_rate: f64, a_positive: bool, possgn_smax: bool,i_type: i8, left_boundary: f64,alpha:f64, c:f64,
+        all_steps: usize, buf_def: &PathBuf, period: usize, debug_init: bool, write_gen: bool, fi: usize)-> std::io::Result<f64>{
+    let mut x_next: f64;
+    let mut string_raw: String = String::new();
+    println!("Opened {:?}", file_to_write.metadata()?);
 //This case will pass when f<0
     if (!a_positive && equation==0) || (!possgn_smax && equation==1){//f<0
         //Doing forward scheme
-        for k in 0..all_steps-1 {// from first to prelast
+        for k in 1..all_steps-1 {// from first to prelast
+            x_next = left_boundary + k as f64 * dx;
+            let mut l = (k as f64- (curtime_on_vel/dx).floor()) as usize;
             fu_next = match equation {
                 0=> fuu * vprevious[k+1],
                 1=> vprevious[k+1] * vprevious[k+1] / 2.0,
@@ -815,20 +865,46 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
                 1=> vprevious[k] * vprevious[k] / 2.0,
                 _ =>  0.0};
             inner_vector[k] = vprevious[k] - (dt/dx)*(fu_next - fu_prev);
+            if debug_init{ println!("Inner: {}, previous: {}\n dt{}, dx{} and divide {}", inner_vector[k], vprevious[k] ,dt, dx,  dt/dx); }
+/*            if equation==0{ 
+            string_raw = if l>=all_steps{
+            l = l % all_steps;
+                if debug_init{ println!("l on module: {l}");}
+                    format!("{:.6}, {:.6}, {:.6}{}",
+                    x_next, first_ex[l], vprevious[k], "\n")
+                }
+                else{
+                    format!("{:.6}, {:.6}, {:.6}{}",
+                        x_next, first_ex[l], vprevious[k], "\n")
+                };
+                if debug_init{println!("{string_raw} \n and real values: {} {} {} {}\n expression: {}, fu_next{}, fu_prev{}", x_next, vprevious[k], 
+                    first_ex[l], (dt/dx)*(fu_next - fu_prev), fu_next, fu_prev);}
+                    file_to_write.write_all(&string_raw[..].as_bytes()).unwrap();
+            }
+            else if equation == 1 {
+                first_ex[k]= (alpha * x_next as f64 + c)/
+                    (alpha * curtime_on_vel + 1.0);
+                    //println!("Exact vector: {}", first_ex[k]);
+                //This will work **Only** with lines initial forms
+                //Is it needed to live after reaching boundary?
+                }
+*/
         }
     }
 //This case will pass when f>0
     else if (a_positive && equation==0)||(possgn_smax && equation==1) {
         for k in 1..all_steps {// from second to last
+            x_next = left_boundary + k as f64 * dx;
             fu_next = match equation {
                 0=> fuu * vprevious[k],
                 1=> vprevious[k] * vprevious[k] / 2.0,
                 _ =>  0.0};
             fu_prev = match equation {
-                0=> fuu * vprevious[k],
+                0=> fuu * vprevious[k-1],
                 1=> vprevious[k-1] * vprevious[k-1] / 2.0,
                 _ =>  0.0};
-            inner_vector[k] = vprevious[k] - (dt/dx)*(fu_next - fu_prev);
+            inner_vector[k] = vprevious[k] - dt/dx*(fu_next - fu_prev);
+            if debug_init{ println!("Inner: {}, previous: {}\n dt{}, dx{} and divide {}", inner_vector[k], vprevious[k] ,dt, dx,  dt/dx); }
         }
     }
     else if (fuu == 0.0 && equation==0) || (equation == 1) {
@@ -852,12 +928,84 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
         {inner_vector[all_steps-1]= inner_vector[all_steps-2];}//      v[n]= v[n-1]
     else
         {inner_vector[all_steps-1] = inner_vector[1];}
+    println!("Velocity in cycle: {fuu}");
+    let mut new_output_time_max = output_time_max;
+    let new_buf_def = buf_def.clone();
+    //This will create dif error per horizont
+    let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
+    let else_dif_path = dif_path.clone();
+    if (curtime_on_dt - output_time_max) > 0.0 {
+        let mut dif_errors =  std::fs::File::create(&dif_path).unwrap();
+        dif_errors.write_all("t, norm1, norm2\n0,0,0\n".as_bytes()).expect("write failed"); 
+    }
+    for k in 1..(all_steps - 1_usize){
+        x_next = left_boundary + k as f64 * dx;
+        write_in_cycle(equation, k,  curtime_on_vel, curtime_on_dt, all_steps, x_next, fu_prev, fu_next, dt, dx, 
+            alpha, c, first_ex, vprevious, file_to_write, debug_init);
+        }
+        if (curtime_on_dt - output_time_max) > 0.0 {
+            let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
+            let else_dif_path = dif_path.clone();
+            //thread::sleep(std::time::Duration::from_secs(1_u64));
+            let mut maxmod_1 = norm_1(&vprevious, &first_ex, dx, curtime_on_vel, all_steps, a_positive);
+            let maxmod_2 = norm_2(&vprevious,&first_ex, dx, curtime_on_vel, all_steps, a_positive);
+            info!("Founded difference: {} & {}", maxmod_1, maxmod_2);
+            let mut dif_errors =  std::fs::File::open(&else_dif_path).unwrap();
+            let dif_string_raw = format!("{:.6}, {:.6}, {:.6} {}",
+                curtime_on_dt, maxmod_1, maxmod_2, "\n");
+            let new_position_par = dif_errors.seek(SeekFrom::End(0)).unwrap();
+                println!("end of differr file: {:?}", new_position_par);
+                let err = dif_errors.write_all(&dif_string_raw[..].as_bytes());
+                println!("{err:?}");
+        new_output_time_max+= output_time_rate;
+        }
+            Ok(new_output_time_max)
+}
+fn write_in_cycle(equation: i8, k: usize,  curtime_on_vel: f64, curtime_on_dt: f64, all_steps: usize, x_next: f64, fu_prev: f64, fu_next: f64, dt:f64, dx:f64,
+    alpha:f64, c:f64, first_ex: &mut Vec<f64>, vprevious: &mut Vec<f64>, file_to_write: &mut File, debug_init: bool) -> std::io::Result<()>{
+    let mut string_raw: String = String::new();
+    let mut l = k as f64 - (curtime_on_vel/dx).floor();
+    println!("{} ... {}", l, k);
+    if equation==0{
+        string_raw = if l<=0.0 {
+            l = (l % all_steps as f64).abs();
+            if k>all_steps - 3{//thread::sleep(std::time::Duration::from_secs(1_u64));
+            }
+            if debug_init{ println!("l on module: {l}");}
+        format!("{:.6}, {:.6}, {:.6}{}",
+            x_next, first_ex[l as usize], vprevious[k], "\n")
+        }
+        else{
+            l = l % all_steps as f64;
+            format!("{:.6}, {:.6}, {:.6}{}",
+                x_next, first_ex[l as usize],
+                vprevious[k], "\n")
+        };
+        if debug_init{println!("String raw: {string_raw} \n and real values: {} {} {}\n expression1: {:9}, expression2: {:9},fu_next{}, fu_prev{}", x_next, vprevious[k], 
+            first_ex[l as usize], dt/dx * fu_next ,  dt * fu_prev/dx, fu_next, fu_prev);}
+        file_to_write.write_all(&string_raw[..].as_bytes()).unwrap();
+    }
+    else if equation == 1 {
+        first_ex[k]= (alpha * x_next as f64 + c)/
+            (alpha * curtime_on_dt + 1.0);
+        //println!("Exact vector: {}", first_ex[k]);
+        //This will work **Only** with lines initial forms
+        //Is it needed to live after reaching boundary?
+        string_raw = format!("{:.6}, {:.6}, {:.6} {}",
+        x_next, first_ex[k], 
+        vprevious[k], "\n");
+        file_to_write.write_all(&string_raw[..].as_bytes()).unwrap();
+        }
+        Ok(())
 }
 pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, prediction: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
-        fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, bound: i8, all_steps: usize, debug_init: bool,
-            type_of_correction_program: bool, smooth_intensity: f64) {
+    first_ex: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, bound: i8, all_steps: usize, debug_init: bool,
+            type_of_correction_program: bool, smooth_intensity: f64, alpha:f64, c:f64, a_positive: bool,period: usize, i_type: i8, fi: usize,
+            file_to_write: &mut File, buf_def: &PathBuf, left_boundary: f64, curtime_on_vel: f64, curtime_on_dt: f64, output_time_max:f64 ,  output_time_rate: f64)-> std::io::Result<f64> {
+    let mut x_next: f64;
     for k in 1..all_steps-1 {// from second(cause of overflow in prediction[k-1]) to prelast
 //First intermidiate future step
+    x_next = left_boundary + k as f64 * dx;
         fu_next = match equation{
             0=> fuu * vprevious[k+1] as f64,
             1=> vprevious[k+1].powi(2) / 2.0,
@@ -880,7 +1028,7 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
             1=> prediction[k-1] * prediction[k-1] /2.0,
             _ =>  0.0};
         inner_vector[k] = 0.5 * (vprevious[k] + prediction[k] - (dt/dx) * (fp_next - fp_prev));
-        if type_of_correction_program {//type_of_correction_program true, then will be used .rs file programm
+        if false {//type_of_correction_program true, then will be used .rs file programm
             monotization_rs(inner_vector, first_correction, second_correction,
                 all_steps, smooth_intensity);
         }
@@ -915,6 +1063,39 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
             {inner_vector[all_steps-1]= inner_vector[all_steps-2];}//      v[n]= v[n-1]
         else
             {inner_vector[all_steps-1] = inner_vector[1];}
+        let new_buf_def = buf_def.clone();
+        //This will create dif error per horizont
+        let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
+        let else_dif_path = dif_path.clone();
+        let mut new_output_time_max = output_time_max;
+            if (curtime_on_dt - output_time_max) > 0.0 {
+                let mut dif_errors =  std::fs::File::create(dif_path).unwrap();
+                dif_errors.write_all("t, norm1, norm2\n0,0,0\n".as_bytes()).expect("write failed"); 
+            }
+            for k in 0..all_steps {
+                x_next = left_boundary + k as f64 * dx;
+                write_in_cycle(equation, k,  curtime_on_vel, curtime_on_dt, all_steps, x_next, fu_prev, fu_next, dt, dx, 
+                    alpha, c, first_ex, vprevious, file_to_write, debug_init);
+                }
+                println!("Here");
+            if (curtime_on_dt - output_time_max) > 0.0 {
+                let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
+                let else_dif_path = dif_path.clone();
+                //thread::sleep(std::time::Duration::from_secs(1_u64));
+                let mut maxmod_1 = norm_1(&vprevious, &first_ex, dx, curtime_on_vel, all_steps, a_positive);
+                let maxmod_2 = norm_2(&vprevious,&first_ex, dx, curtime_on_vel, all_steps, a_positive);
+                info!("Founded difference: {} & {}", maxmod_1, maxmod_2);
+                let mut dif_errors =  std::fs::File::open(&dif_path).unwrap();
+                let dif_string_raw = format!("{:.6}, {:.6}, {:.6} {}",
+                    curtime_on_dt, maxmod_1, maxmod_2, "\n");
+                let new_position_par = dif_errors.seek(SeekFrom::End(0)).unwrap();
+                    println!("end of differr file: {:?}", new_position_par);
+                    let err = dif_errors.write_all(&dif_string_raw[..].as_bytes());
+                    println!("{err:?}");
+                thread::sleep(std::time::Duration::from_secs(1_u64));
+        new_output_time_max+= output_time_rate;
+        }
+                    Ok(new_output_time_max)
 }
 
 pub fn monotization_rs(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
@@ -923,7 +1104,7 @@ pub fn monotization_rs(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f
         println!("Now array on next layer with smooth_coef {1}: {0:.2}\n {2}.", smooth_intensity,
             Style::new().foreground(Red).bold().paint("smooth_intensity"),
             Style::new().foreground(Blue).italic().paint("will be smoothed out with rust function 'smoothZF_rs'."));
-        smooth_zf_rs(inner_vector, all_steps, smooth_intensity, first_correction, second_correction);
+        smooth_zf_rs(inner_vector, all_steps , smooth_intensity, first_correction, second_correction);
     }
     else{
         println!("Steps must be set to be within range ({}) : {MONOTIZATION_MIN}...{MONOTIZATION_MAX} ", 
@@ -947,54 +1128,64 @@ pub fn monotization_c(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f6
     }
 }
 //-----------------------------------------------------------------------------------
-pub fn do_exact_solutions(equation: i8, all_steps: usize, start_left: f64, dx: f64, curtime_on_dt: f64, velocity: f64, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
+pub fn do_exact_solutions(equation: i8, all_steps: usize, start_left: f64, dx: f64, curtime_on_dt: f64, output_time_max:f64 ,velocity: f64, curtime_on_vel: f64, alpha: f64, c: f64, deb_my: bool, 
     vprevious: &mut Vec<f64>, first_ex: &mut  Vec<f64>, second_ex: &mut Vec<f64>)// -> (Vec<f64>, Vec<f64>, Vec<f64>)
     {
+
+    if (curtime_on_dt - output_time_max) > 0.0 {
     let mut l: f64;
     let mut l_new: usize;
     let mut x_next: f64;
+    let ex_curtime_on_vel = curtime_on_dt * velocity;
+    println!(" {ex_curtime_on_vel} = {curtime_on_vel}");
     //let mut h = (all_steps as f64/ print_npy as f64).floor() as usize;
+    if equation == 0 {
     for k in 0 .. all_steps {
         x_next = start_left + k as f64 * dx;
-        l =  k as f64 - curtime_on_vel.floor();
-        if equation == 0 {
+        l =  k as f64 - (ex_curtime_on_vel/dx).floor();
             //On which side exact solution will disapear? depends on sgn velocity
             if velocity <=0.0 {
                 if l >= all_steps as f64 {
                     l_new = (l % all_steps as f64) as usize;
+                    println!("lnew: {}", l_new);
+                    second_ex[k] = first_ex[l_new].clone();
+                }
+                else {
+                    l_new = l as usize;
+                    second_ex[k] = first_ex[l_new].clone();
+                }
+                if deb_my { 
+                println!("l: {}, curtime_on_vel: {}", l, curtime_on_vel);
+                }
+            }
+            else if velocity >0.0 {
+                if l < 0 as f64 {
+                    l_new = (l % all_steps as f64).abs() as usize;
                     second_ex[k] = first_ex[l_new].clone();
                 }
                 else {
                     l_new = if l >= 0.0 {l as usize} else { (all_steps as f64 + l) as usize};
                     second_ex[k] = first_ex[l_new].clone();
                 }
-            if deb_my { 
-                println!("l: {}, curtime_on_vel: {}", l, curtime_on_vel);
-            }
-        }
-        else if velocity >0.0 {
-            if l <= 0 as f64 {
-                l_new = (l % all_steps as f64).abs() as usize;
-                second_ex[k] = first_ex[l_new].clone();
-            }
-            else {
-                l_new = if l >= 0.0 {l as usize} else { (all_steps as f64 + l) as usize};
-                second_ex[k] = first_ex[l_new].clone();
             }
         }
     }
     else if equation == 1 {
+    for k in 0 .. all_steps {
+        x_next = start_left + k as f64 * dx;
         first_ex[k]= (alpha * x_next as f64 + c)/
             (alpha * curtime_on_dt + 1.0);
-        println!("Exact vector: {}", first_ex[k]);
+        //println!("Exact vector: {}", first_ex[k]);
             //This will work **Only** with lines initial forms
             //Is it needed to live after reaching boundary?
         }
     }   
     if equation ==0 {
         first_ex.copy_from_slice(&second_ex[..]);
-        println!("Exact: {:?}\n Numeric: {:?}", first_ex, vprevious);
+       // println!("Exact: {:?}\n Numeric: {:?}", first_ex, vprevious);
     }
+    //thread::sleep(std::time::Duration::from_secs(1_u64));
+}
     //(vprevious, first_ex, second_ex)
 }
 pub fn calculate_cycles_per_sec(dtotal_loop_nanos: i64){
@@ -1008,9 +1199,9 @@ pub fn make_vec_output(dtotal_loop_nanos: i64){
 }
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current_time_on_dt: f64, hor_time_step: usize,
-    mut x_index: usize, mut time_output_precised_secs: f64, 
+    mut x_index: usize, mut y_index: usize, mut time_output_precised_secs: f64, mut new_output_time_rate: f64,
     vector_time: &mut Vec<f64>, vector_time_exact: &mut Vec<f64>, inner_vector: &Vec<f64>, first_ex: &Vec<f64>,
-        do_step_reduce_now: bool, print_npy: usize, my_deb: Option<bool>) -> (usize, f64){
+        do_step_reduce_now: bool, print_npy: usize, my_deb: Option<bool>) -> (usize, usize, f64){
         let my_deb = if let Some(debug) = my_deb{
             debug
         }
@@ -1018,7 +1209,8 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
             false
         };
 //This function determine one horizont layer over unit of time
-    if (current_time_on_dt - time_output_precised_secs) > 0.0 {
+    if (current_time_on_dt - new_output_time_rate) > 0.0 {
+        new_output_time_rate += time_output_precised_secs;
         let mut on_line: usize;
         let mut next_vec_index: usize;
         let mut all_step_size = if do_step_reduce_now{
@@ -1045,21 +1237,20 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
                         println!("current x_index {}, time in exact_vector: {} & time in vector: {}", next_vec_index, vector_time_exact[next_vec_index],
                         vector_time[next_vec_index]);
                     }
-                        //thread::sleep(time::Duration::from_millis(400_u64));
                         //println!("Получившиеся значения с шагом {} равны {}\n", k, Vector_time[k+x_index as usize]);
                 }//Last step will be exact...
                 vector_time[x_index + all_step_size] = inner_vector[all_steps-1];
                 vector_time_exact[x_index + all_step_size] = first_ex[all_steps-1];
                     //will be print_npy + 1 every time
                 x_index = x_index + all_step_size as usize;
-        time_output_precised_secs += time_output_precised_secs;
         }
         else{
-            println!("{} {}\n", ansi_term::Colour::Purple.underline().paint("Left time for recording:"), current_time_on_dt - time_output_precised_secs);
+            println!("{} {}\n", ansi_term::Colour::Purple.underline().paint("Left time for recording:"), current_time_on_dt - new_output_time_rate);
         }
     println!("Value of x_index: {}", x_index);
+    y_index += 1;// output time all times
 //as it from beginning had value i, then will be 2i, 3i...
-    (x_index, time_output_precised_secs)
+    (x_index, y_index, new_output_time_rate)
     }
 
 #[cfg(test)]
