@@ -672,39 +672,42 @@ pub fn add_additional_info_in_datas_end(dir: &PathBuf, nf: usize, t_max: Option<
     //First check if I had alredy written info 
     let param_treated = dir.join(format!("treated_datas_{0}", nf));
     let param_ex_to_read = param_treated.join( format!("parameters_nf{0}.txt", nf));
-    printc!(red: "File with parameters - {:?},",  param_ex_to_read.display());
-    //printlnc!(yellow: "which exists? {:?}",  param_ex_to_read.exists());
+    printc!(red: "File with parameters - {:?},\n",  param_ex_to_read.display());
+    printc!(yellow: "which exists? {:?}\n",  param_ex_to_read.exists());
     let path_to_read = Path::new(&param_ex_to_read);
+    let mut is_written_already: bool = false;
     //This won't create file, so func create_safe_file can be applied
-    let mut prm_file= create_safe_file(None, Some(&param_ex_to_read), false)?;  
+    {
+        let prm_file= create_safe_file(None, Some(&param_ex_to_read), true)?;  
     let mut reader_parameters = io::BufReader::new(&prm_file);
     let mut pbuf = String::new();
-    let mut is_written_already: bool = false;
-    while let nbytes = reader_parameters.read_line(&mut pbuf)//.expect("reading from cursor won't fail")
+    'cycle: while let nbytes = reader_parameters.read_line(&mut pbuf).ok().expect("ERRMSG")//.expect("reading from cursor won't fail")
     {
-        if nbytes.is_ok(){
-        if pbuf.to_lowercase().contains("printed elements per raw"){
+        println!("\tBytes readed :{}", nbytes);
+        if nbytes !=0{
+            if pbuf.to_lowercase().contains("printed elements per raw"){
             println!("Found in file {:#?}", pbuf);
             is_written_already = true;
+            }
+            else{
+                continue
+            }
         }
         else{
-            continue
+        break 'cycle
         }
     }
-    else{
-        break
-    }
-    }
     pbuf.clear();
+}
+    let mut prm_file_write= create_safe_file(None, Some(&param_ex_to_read), false)?; 
     //Write additional info about reducing steps in graphics and spec for burger max_time
-    let new_position_par = prm_file.seek(SeekFrom::End(0)).unwrap(); 
+    let new_position_par = prm_file_write.seek(SeekFrom::End(0)).unwrap(); 
     if !is_written_already{
-        prm_file.write_all(format!("\nprinted elements per raw {}\n", raw_size).as_bytes())?;
+        prm_file_write.write_all(format!("\nprinted elements per raw {}\n", raw_size).as_bytes())?;
     }
     if let Some(t_max) = t_max {
-        prm_file.write_all(format!("{} Maximum live time in burger task: {}\n","\t", t_max).as_bytes())?;
+        prm_file_write.write_all(format!("{} Maximum live time in burger task: {}\n","\t", t_max).as_bytes())?;
     }
-    
     Ok(())
 }
 //________________________Additional+++++++++++++++++++++++++++++++++++++
@@ -755,12 +758,55 @@ pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
         }
     }
 }
+/*
+fn wf(_path: Option<&Path>) -> Result<(), Error> {
+    let current_dir = env::current_dir()?;
+    println!(
+        "Let's get access to current dir)\nEntries modified in the last 1 hour in {:?}:",
+        current_dir);
+    for entry in fs::read_dir(current_dir)? {
+        let entry = entry?;
+        let path = entry.path();
 
+        let metadata = fs::metadata(&path)?;
+        let last_modified = metadata.modified()?.elapsed().unwrap().as_secs();
+
+        if last_modified < 1 * 3600 && metadata.is_file() && path.ends_with(".rs") || path.ends_with("txt"){
+            println!(
+                "Last modified: {:?} seconds,
+                is read only: {:?},
+                size: {:?} bytes,
+                filename: {:?}",
+                last_modified,
+                metadata.permissions().readonly(),
+                metadata.len(),
+                path.file_name().ok_or("No filename").expect("File wf error"),
+            );
+        }
+    let path_to_read = Path::new("save_some_statistic.txt");
+    let stdout_handle = Handle::stdout()?;
+    let handle = Handle::from_path(path_to_read)?;
+
+    if stdout_handle == handle {
+        return Err(Error::new(
+            ErrorKind::Other,
+            "You are reading and writing to the same file",
+        ));//"You are reading and writing to the same file"
+    } else {
+        
+        let file = File::open(&path_to_read)?;
+        let file = BufReader::new(file);
+        for (num, line) in file.lines().enumerate() {
+            println!("{} : {}", num, line?.to_uppercase());
+        }
+    }
+    }    Ok(())
+}
 ///Some almost usefulness stuff 
 fn goodbye() -> String {
     "さようなら".to_string()
 }
-/*
+
 #[allow(missing_docs)]
 #[macro_export]
 #[warn(unused_macros)]
@@ -773,4 +819,3 @@ macro_rules! pt {
     };
 }
 */
-
