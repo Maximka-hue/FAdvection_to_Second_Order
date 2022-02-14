@@ -429,6 +429,7 @@ let type_of_correction_program = true;
     let mut cycle_time = chrono::Duration::nanoseconds(0);
     let mut cycle_time_nanos: i64 = cycle_time.num_nanoseconds().unwrap();
     let mut fi_exp_path = PathBuf::new();
+    let mut once = true;
     fi_exp_path = exp_path.join(format!("exp_{}", fi));
     let fi_exp_path_update = fi_exp_path.clone();
     if all_exact_record{
@@ -462,18 +463,19 @@ let type_of_correction_program = true;
             let write_gen = true;
 //Simply calculate second layer based on previous one
             if !correction{
-                output_time_rate_add = main_cycle_first_order(&mut vprevious, &mut inner_vector, &mut first_ex, &mut union_x_u_w, fuu, fu_next, fu_prev, dt, dx,
+                (output_time_rate_add, once) = main_cycle_first_order(&mut vprevious, &mut inner_vector, &mut first_ex, &mut union_x_u_w, fuu, fu_next, fu_prev, dt, dx,
                     equation, bound,curtime_on_vel, current_time_on_dt, output_time_rate_add, output_time_rate, a_positive, possgn_smax, i_type,
-                    left_domend, width_alpha, height_init, all_steps, &buf_def, period, deb_my, write_gen,fi).expect("Nothing special");
+                    left_domend, width_alpha, height_init, all_steps, &buf_def, period, deb_my, write_gen,fi, once).expect("Nothing special");
                     //println!("vprevious: {:?}\n inner_vector: {:?}", vprevious, inner_vector);
                 }
 //Otherwise  calculate  with correction
             else{
-                output_time_rate_add = main_cycle_with_correction(&mut vprevious, &mut inner_vector, &mut prediction, &mut first_correction, &mut second_correction, &mut first_ex,
+                (output_time_rate_add, once) = main_cycle_with_correction(&mut vprevious, &mut inner_vector, &mut prediction, &mut first_correction, &mut second_correction, &mut first_ex,
                     fuu, fu_next, fu_prev, fp_next, fp_prev, dt, dx, equation, bound, 
-                    all_steps, deb_my, type_of_correction_program, smooth_intensity, width_alpha, height_init, a_positive, period, i_type, fi, &mut union_x_u_w, &buf_def, left_domend,
+                    all_steps, deb_my, type_of_correction_program, smooth_intensity, width_alpha, height_init, a_positive, period, i_type, fi, once,
+                    &mut union_x_u_w, &buf_def, left_domend,
                     curtime_on_vel, current_time_on_dt, output_time_rate_add ,  output_time_rate).expect("Nothing special");
-            }      
+            }
 //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
             do_exact_solutions(equation, all_steps, left_domend, dx, current_time_on_dt, output_time_rate, fuu, curtime_on_vel, width_alpha, height_init,
                 deb_my,  &mut vprevious, &mut first_ex, &mut second_ex);
@@ -492,9 +494,9 @@ let type_of_correction_program = true;
                 pt!(vprev_str);pt!("/n"); pt!(inner_vector);
             }
             //Calculate time per cycle, remaining and other time
-            let new_cycle = std::time::Instant::now();
+            let new_cycle_end = std::time::Instant::now();
             let elapsed_in = begin_of_main.elapsed();
-             println!("\nMain calculation: {:?} ^ {:?}", elapsed_in, begin_of_main.duration_since(new_now));
+            println!("\nMain calculation: {:?} ^ {:?}", elapsed_in, begin_of_main.duration_since(new_now));
             time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
             if switch_time {
                 //Loops made on real-time 
@@ -552,32 +554,4 @@ let type_of_correction_program = true;
     });
     let end_of_program = std::time::Instant::now();
     println!("Programm had been finished at: {:?}", end_of_program.duration_since(advection_start));
-}/* 
-extern crate once_cell;
-extern crate log4rs;
-
-use log::{info, warn, LevelFilter};
-use log4rs::append::file::FileAppender;
-use log4rs::encode::pattern::PatternEncoder;
-use log4rs::config::{Appender, Config, Root};
-ANSIByteStrings(&[
-    Green.paint("user data 1\n".as_bytes()),
-    Green.bold().paint("user data 2\n".as_bytes()),
-]).write_to(&mut std::io::stdout()).unwrap();
-let dirs = dirs.map(|file| file.unwrap().path());
-let logfile = FileAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
-        .build("log/output.log").unwrap();
-
-    let config = Config::builder()
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
-        .build(Root::builder()
-                   .appender("logfile")
-                   .build(LevelFilter::Info)).unwrap();
-
-    log4rs::init_config(config).unwrap();
-
-    log::info!("Hello, world!");   // more program logic goes here...
-
-}     
-*/
+}
