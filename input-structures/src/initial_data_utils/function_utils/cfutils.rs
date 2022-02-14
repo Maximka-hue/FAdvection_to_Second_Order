@@ -1,12 +1,11 @@
 //Errors in dark red, cyan for info
-#![feature(trace_macros)]
 pub use std::borrow::Cow;
 use crate::initial_data_utils::function_utils::print_macros::macro_lrls::{pt};
 extern crate os_type;
 use os_type::{ OSType};
 extern crate path_clean;
 use handle::Handle;
-use log::info;
+use log::{info, warn};
 use path_clean::PathClean;
 use csv::Writer;
 use std::{thread, cmp, str::FromStr, 
@@ -35,10 +34,7 @@ use std::error::Error as SError;//****
 type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
 use glob;
 //use dao_ansi::color::kinds::{ForegroundColor, BackgroundColor, PrimaryColor};
-//Regex 
-//use lazy_static::lazy_static;
-use regex::Regex;
-use regex::{RegexSet};
+
 
 pub const  SLEEP_PASS: u16 = 0;
 pub const  SLEEP_LOW: u16 = 100;
@@ -49,6 +45,7 @@ pub const  ALL_TIMES: [u16; 5] = [SLEEP_PASS, SLEEP_LOW, SLEEP_NORMAL, SLEEP_HIG
 
 pub const  ARGUMENTO_DBGOUT: bool = true;
 pub const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
+pub const IS_CHOSEN_WRITE_IN_MAIN_CYCLE: bool = true;
 
 pub fn op_sys() -> OSType {
     let os = os_type::current_platform();
@@ -328,20 +325,6 @@ pub fn is_dir_hidden(entry: &DirEntry) -> bool {
          .map(|s| s.starts_with("."))
          .unwrap_or(false)
 }
-fn create_safe_file(path: &str) -> Result<(), std::io::Error>{
-    std::fs::File::open(&path).unwrap_or_else(|error| {
-        if error.kind() == ErrorKind::NotFound {
-            File::create(&path).unwrap_or_else(|error| {
-                panic!("Problem creating the file: {:?}", error);
-            })
-        } 
-        else {
-            panic!("Problem opening the file: {:?}", error);
-        }
-        });
-    Ok(())
-}
-
     // --------------------------------------------------
 #[derive(Debug, Clone)]
 pub struct Argumento{
@@ -489,18 +472,41 @@ pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactve
                 }
             }
         info!("All_steps: {}, {:^.5}, {:^.5}", all_steps, numvec[end], exactvec[end]);
-        let pic_path = &calculation_path.join(format!(r"pic_shapes_file_num{}_{}.txt", nf, time_form.unwrap_or("")));
-        let mut pic_file = OpenOptions::new()
-            .write(true).create(true).open(&pic_path).expect("cannot open file");
+        let pic_path = calculation_path.join(format!(r"pic_shapes_file_num{}_{}.txt", nf, time_form.unwrap_or("")));
+        let mut pic_file = create_safe_file(None, Some(&pic_path), false).expect("cannot open file");
         for k in 0..print_npy {
             next_vec_index = k * step_by_step;
-            pic_file.write_all(format!("{} , {:^.5}, {:^.5}\n",
+            pic_file.write_all(format!("{} , {:.5}, {:.5}\n",
             next_vec_index, numvec[next_vec_index], exactvec[next_vec_index]).as_bytes()).unwrap();
         }
-        pic_file.write_all(format!("End: {} , {:^.5}, {:^.5}\n", end, numvec[end], exactvec[end]).as_bytes()).unwrap();
+        pic_file.write_all(format!("End: {} , {:.5}, {:.5}\n", end, numvec[end], exactvec[end]).as_bytes()).unwrap();
         pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
+}
+pub fn create_safe_file(ppath_str: Option<&str>, path_buf: Option<&PathBuf>, only_create_once: bool) -> Result<File, std::io::Error>{
+        let path_to_open = if let Some(path_str) = ppath_str{
+            path_str.to_string()
+        }
+        else{
+            String::from(path_buf.unwrap().to_string_lossy())
+        };
+        if only_create_once{
+        Ok(std::fs::File::open(&path_to_open).unwrap_or_else(|error| {
+            if error.kind() == ErrorKind::NotFound {
+                File::create(&path_to_open).unwrap_or_else(|error| {
+                    panic!("Problem creating the file: {:?}", error);
+                })
             }
-
+            else {
+                panic!("Problem opening the file: {:?}", error);
+            } 
+        }))
+    }
+    else{
+        Ok(std::fs::File::create(&path_to_open).unwrap_or_else(|error| {
+            panic!("Problem creating the file: {:?}", error);
+        }))
+    } 
+}
 pub fn create_safe_file_with_options(path: PathBuf, create: bool) -> Result<std::fs::File, std::io::Error>{
     let file = if create {
         OpenOptions::new().create(true).write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
@@ -613,7 +619,7 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
                         println!("switch_path_x_u_w : {:?}", updating_x_u_w);
                     }
                     println!("Listing '{}'", path.display());
-                    let mut paraview_file_x_u_w = std::fs::File::create(updating_x_u_w)?;//superfluously
+                    let mut paraview_file_x_u_w = create_safe_file(None, Some(&updating_x_u_w), false)?;//superfluously
                     println!("{:?}" , paraview_file_x_u_w);
                     paraview_file_x_u_w.write_all("x, exv, numv\n".as_bytes())?;
                     for k in 0..raw_size {
@@ -643,14 +649,16 @@ pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (
         let ub = format!(r"csv_{0}", nf);
         new_switch_path = dir.join(ub);
         let csv_data_dir = Path::new(&new_switch_path);
-        let err = fs::create_dir_all(csv_data_dir)?;
+        let err = fs::create_dir_all(csv_data_dir);
+        if let Some(err) = err.err(){
+            warn!("{}", err);
+        }
     }
     let mut csv_array = vec![vec![0.0; 2_usize * raw_size];
         cmp::max(tvector.len(), exact_vector.len())];
     let mut x_index: usize;
         //let mut wtr_inner;
         //let mut temp_csv;
-
         Ok(())
 }
 
@@ -661,18 +669,42 @@ pub fn add_additional_info_in_datas_end(dir: &PathBuf, nf: usize, t_max: Option<
     else{
         DEFAULT_ELEMENTS_PER_RAW
     };
-    //Write additional info about reducing steps in graphics and spec for burger max_time
+    //First check if I had alredy written info 
     let param_treated = dir.join(format!("treated_datas_{0}", nf));
     let param_ex_to_read = param_treated.join( format!("parameters_nf{0}.txt", nf));
-    println!("{}: {}", param_ex_to_read.display(), param_ex_to_read.exists());
+    printc!(red: "File with parameters - {:?},",  param_ex_to_read.display());
+    //printlnc!(yellow: "which exists? {:?}",  param_ex_to_read.exists());
     let path_to_read = Path::new(&param_ex_to_read);
-    //This won't create file, so func create_safe_file_with_options can be applied
-    let mut prm_file= OpenOptions::new().write(true).open(param_ex_to_read)?;  
+    //This won't create file, so func create_safe_file can be applied
+    let mut prm_file= create_safe_file(None, Some(&param_ex_to_read), false)?;  
+    let mut reader_parameters = io::BufReader::new(&prm_file);
+    let mut pbuf = String::new();
+    let mut is_written_already: bool = false;
+    while let nbytes = reader_parameters.read_line(&mut pbuf)//.expect("reading from cursor won't fail")
+    {
+        if nbytes.is_ok(){
+        if pbuf.to_lowercase().contains("printed elements per raw"){
+            println!("Found in file {:#?}", pbuf);
+            is_written_already = true;
+        }
+        else{
+            continue
+        }
+    }
+    else{
+        break
+    }
+    }
+    pbuf.clear();
+    //Write additional info about reducing steps in graphics and spec for burger max_time
     let new_position_par = prm_file.seek(SeekFrom::End(0)).unwrap(); 
-    prm_file.write_all(format!("\nPrinted elements per raw {}\n", raw_size).as_bytes())?;
+    if !is_written_already{
+        prm_file.write_all(format!("\nprinted elements per raw {}\n", raw_size).as_bytes())?;
+    }
     if let Some(t_max) = t_max {
         prm_file.write_all(format!("{} Maximum live time in burger task: {}\n","\t", t_max).as_bytes())?;
     }
+    
     Ok(())
 }
 //________________________Additional+++++++++++++++++++++++++++++++++++++
@@ -724,6 +756,50 @@ pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
     }
 }
 /*
+fn wf(_path: Option<&Path>) -> Result<(), Error> {
+    let current_dir = env::current_dir()?;
+    println!(
+        "Let's get access to current dir)\nEntries modified in the last 1 hour in {:?}:",
+        current_dir);
+    for entry in fs::read_dir(current_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        let metadata = fs::metadata(&path)?;
+        let last_modified = metadata.modified()?.elapsed().unwrap().as_secs();
+
+        if last_modified < 1 * 3600 && metadata.is_file() && path.ends_with(".rs") || path.ends_with("txt"){
+            println!(
+                "Last modified: {:?} seconds,
+                is read only: {:?},
+                size: {:?} bytes,
+                filename: {:?}",
+                last_modified,
+                metadata.permissions().readonly(),
+                metadata.len(),
+                path.file_name().ok_or("No filename").expect("File wf error"),
+            );
+        }
+    let path_to_read = Path::new("save_some_statistic.txt");
+    let stdout_handle = Handle::stdout()?;
+    let handle = Handle::from_path(path_to_read)?;
+
+    if stdout_handle == handle {
+        return Err(Error::new(
+            ErrorKind::Other,
+            "You are reading and writing to the same file",
+        ));//"You are reading and writing to the same file"
+    } else {
+        
+        let file = File::open(&path_to_read)?;
+        let file = BufReader::new(file);
+        for (num, line) in file.lines().enumerate() {
+            println!("{} : {}", num, line?.to_uppercase());
+        }
+    }
+    }    Ok(())
+}
+///Some almost usefulness stuff 
 fn goodbye() -> String {
     "さようなら".to_string()
 }
