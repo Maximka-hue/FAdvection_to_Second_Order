@@ -523,7 +523,7 @@ let type_of_correction_program = true;
             inner_vector = vec![0.0; all_steps];
             current_time_on_dt += dt;// move up
             //Measure real-time from procesing programm
-            processed_time_nanos = processed_time_nanos.checked_add(&chrono::Duration::from_std(new_now - begin_of_main).unwrap()).unwrap();
+            processed_time_nanos = processed_time_nanos.checked_add(&chrono::Duration::from_std(new_cycle_end - begin_of_cycle).unwrap()).unwrap();
             println!("{} ^ {}", processed_time_nanos, maxl_time_secs as f64 - elapsed_in.as_secs() as f64 * cur_period as f64);
             println!("{}", 
                 ansi_term::Colour::Yellow.underline().paint(format!("Real-time elapsed: {processed_time_nanos:6?}")));
