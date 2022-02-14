@@ -550,8 +550,9 @@ let type_of_correction_program = true;
         else{
             print_npy
         };
-        let write_res = add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(determined_step));
-    });
+        add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(determined_step)).unwrap();
+       
     let end_of_program = std::time::Instant::now();
     println!("Programm had been finished at: {:?}", end_of_program.duration_since(advection_start));
+    });
 }
