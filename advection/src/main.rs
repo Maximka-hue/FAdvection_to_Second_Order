@@ -15,15 +15,15 @@ use input_structure::initial_data_utils::{Path,PathBuf, function_utils::print_ma
 use input_structure::initial_data_utils::{parse_into_file_parameters};
 #[warn(unused_imports)]
 use input_structure::cfutils::{ChooseSleepTime, ColorPrintState, ArgumentParseFilesError, create_safe_file_with_options, 
-    op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files, add_additional_info_in_datas_end};
+    op_sys, approx_equal, write_at_end, traverse_not_hidden_files, show_shape, save_files, add_additional_info_in_datas_end,
+    IS_CHOSEN_WRITE_IN_MAIN_CYCLE};
 use input_structure::{TaskType, TaskTypeCs, FileParametres, initial_information_of_advection, 
-    advection_input, process_files, main_initialization, do_exact_solutions,
+    advection_input, process_files, main_initialization, do_exact_solutions, SIMPLE_STEP_TYPE,
     main_cycle_first_order, main_cycle_with_correction, calculate_output_time_vec_based_on_outtime_rate};
 #[macro_use]
 extern crate colour;
 #[macro_use] 
 extern crate tcprint;
-#[macro_use]
 extern crate ansi_term;
 extern crate num_cpus;
 extern crate rand;
@@ -31,15 +31,13 @@ use env_logger;
 extern crate log;
 use log::{debug, error, info, warn};
 extern crate walkdir;
-use walkdir::{DirEntry, WalkDir};
 use gtk::prelude::*;
 use rayon::{prelude::*};
 use gtk::{Application, ApplicationWindow, Box as GTKBox, Button, Label};
 pub use ansi_term::{Colour::{Fixed, Black as AnsiBlack, Red as AnsiRed, Green as AnsiGreen, Yellow as AnsiYellow, Blue as AnsiBlue, Purple as AnsiPurple, 
     Cyan as AnsiCyan, Fixed as AnsiFixed}, Style as AnsiStyle};
 ///These imports from library as I already downloaded these crates)
-use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env, fs::{self, OpenOptions}, io::{self, Write, BufRead, BufReader, BufWriter, Read, Seek}};
-use time::{Duration};
+use std::{cmp::Ordering,time::Instant, time::Duration as SDuration, thread, env, fs::{self, OpenOptions}, io::{ Write}};
 use chrono::{Duration as CDuration};
 use time::macros::date;
 use itertools::Itertools;
@@ -66,7 +64,6 @@ pub const MY_TEX_PATH_FILE: bool = true;
 pub const ADDITION_OF_TIME_VECTORS: bool = true;
 pub const MAXIMUM_FILES_TO_EXPECT: usize = 6;
 pub const DIVIDE_ALL_STEPS_TO_PYTHON_PIC: usize = 11;
-pub const SIMPLE_STEP_TYPE: bool = true; //true - steps, false - all_steps
 pub const LANGUAGE_TO_USE_CORRECTION: bool = true;//this is to switch among smooth.c and smooth.rs programs
 pub const REDUCE_TIME_TO_INT: bool = true;
 pub const SHOULD_SLEEP_IN_MAIN: bool = false;
@@ -80,7 +77,7 @@ pub use determine_calculation_modes::*;
 use modifications::*;
 
 use std::error::Error as SError;
-type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
+//type StdResult<T> = std::result::Result<T, Box<dyn SError>>; D!esire to return Result #TODO
 fn main() {//-----------------------------------------
     let application = Application::new(
         Some("com.github.rust-ui-rundown.rust-ui-gtk"),
@@ -128,19 +125,19 @@ fn main() {//-----------------------------------------
     if TIME_OUTPUT{
         println!("App initialization: {:?} {duration:?}", new_now.duration_since(advection_start));
     }
-    let (argumento, mut my_config) = from_cli.unwrap();
+    let (argumento, my_config) = from_cli.unwrap();
 //-----------------------------------------
 //Here I am defining by default colored struct with task type
     let mut burger_rng = rand::thread_rng();
-    let mut burger_order: u16 = burger_rng.gen_range(0..3);
+    let burger_order: u16 = burger_rng.gen_range(0..3);
     let mut state = ColorPrintState::<TaskTypeCs>::default();
     tcprintln!(state,
-         (""),
-         [burger_cs_first_order: "{}", "OOO"],
-         ("!"),("!")
+        (""),
+        [burger_cs_first_order: "{}", "OOO"],
+        ("!"),("!")
     );
 //General instruction about operating sys and environment variables
-    let comp_os = op_sys();
+    let _comp_os = op_sys();
     let num_threads = num_cpus::get();
 //From this point I will determine file hierarchy on which output and input files will be.
 //----------------------------------------- 
@@ -203,7 +200,7 @@ fn main() {//-----------------------------------------
         }
     }
 //Then I am initializing structure that would be passed as initial datas for program, but!
-    let mut data_default = FileParametres::first_initializing(1).expect("Something wrong in Initializing");//It is as default for program
+    let data_default = FileParametres::first_initializing(1).expect("Something wrong in Initializing");//It is as default for program
 //There are options: 1 generate from file[GENERATE_RANDOM_EXAMPLE= false or datas from file will be illigal]
 //(in that case supported Transfer task)
 //2 from txt files which *will be from input path getted *collected from command line *from file[their paths].
@@ -257,7 +254,7 @@ let number_of_files_with_data = file_parameters_from_cli.1.len();
 let debug_add = true;
 let all_exact_record = true;  
 let exp_path = Path::new("/home/computadormaxim/_Programming_projects/RUSTprojects/FAdvection_to_Second_Order/advection/src/animation/exper");
-let exp_buf = PathBuf::from(exp_path);
+let _exp_buf = PathBuf::from(exp_path);
 if all_exact_record{
     fs::create_dir_all(exp_path).unwrap();
 }
@@ -340,11 +337,11 @@ let type_of_correction_program = true;
     let maxl_time_secs  = SDuration::from_secs(max_time_output_precised_secs);// below, to set precision up to 6 characters after commas 
     let maxl_time_nanosecs  = SDuration::from_nanos(max_time_output_precised_nanosecs);
     let mut maxl_time_secs = maxl_time_secs.as_secs();
-    let mut maxl_time_nanosecs = maxl_time_nanosecs.as_nanos();
+    let maxl_time_nanosecs = maxl_time_nanosecs.as_nanos();
 /*Period of output*/let out_time_secs = SDuration::from_secs(time_output_precised_secs); 
     let out_time_nanosecs = SDuration::from_nanos(time_output_precised_nanosecs); 
     let mut out_time_secs = out_time_secs.as_secs();
-    let mut out_time_nanosecs = out_time_nanosecs.as_nanos();
+    let out_time_nanosecs = out_time_nanosecs.as_nanos();
 //---------------------------------------------------------------------------------------
 /*step on y*/let dt_from_init = match equation {
             0 => if a_positive {co * dx/(smax)} else {co * dx/(-smax)},
@@ -416,16 +413,15 @@ let type_of_correction_program = true;
         let mut current_time_on_dt = 0_f64;//will be increased by every time(dt) loop
         let mut exact_float_time_dif: f64 = output_time_max;
 //This means step by which aliquot will be reported in time vec(horizontal step)
-        let mut hor_time_step = if do_step_reduce_now {
+        let hor_time_step = if do_step_reduce_now {
             (all_steps as f64/ print_npy as f64).floor() as usize}
             else{
                 1 as usize
             };
         let begin_of_main= Instant::now(); 
-        let mut new_now = std::time::Instant::now();
         let mut curtime_on_vel = 0.0;            
-        let mut fp_next: f64 = 0.0;
-        let mut fp_prev: f64 = 0.0;
+        let fp_next: f64 = 0.0;
+        let fp_prev: f64 = 0.0;
         let mut time_dif_in_nanos: f64 = maxl_time_nanosecs as f64;
         let mut time_dif_in_secs: f64 = maxl_time_secs as f64;
 //Needed to measure real-time rate
@@ -496,7 +492,7 @@ let type_of_correction_program = true;
                 pt!(vprev_str);pt!("/n"); pt!(inner_vector);
             }
             //Calculate time per cycle, remaining and other time
-            new_now = std::time::Instant::now();
+            let new_cycle = std::time::Instant::now();
             let elapsed_in = begin_of_main.elapsed();
             println!("\nMain calculation: {:?} ^ {:?}", elapsed_in, new_now.duration_since(begin_of_main));
             time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
@@ -506,6 +502,7 @@ let type_of_correction_program = true;
                 time_dif_in_nanos = (maxl_time_nanosecs as f64 - elapsed_in.as_nanos() as f64 )/ 1000_000_000_f64;
                 cycle_time = chrono::Duration::from_std(new_now - begin_of_cycle).unwrap();//Duration::nanoseconds(
                 cycle_time_nanos = cycle_time.num_nanoseconds().unwrap();
+                cur_period+= dt;
                 println!("Duration on cycle: {}", cycle_time);
                 info!("This time extract cycle_end of one horiz. step(millis) {:?}", cycle_time_nanos / 1000_000_i64);
             }
@@ -545,11 +542,17 @@ let type_of_correction_program = true;
         show_shape(all_steps, all_steps, &vprevious, &inner_vector, &calculation_anim_path, fi, "This is the time after all processed time.", Some("the_ultimate_shape"), deb_my);
         //save_files(&calculation_anim_path,  vector_time, Some(vector_time_exact), (all_steps, Some(left_domend), Some(right_domend)), Some(print_npy), 
         //    fi, y_index, Some(true), Some(true), Some(deb_my));
-        let write_res = add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(print_npy));
+        let determined_step = if IS_CHOSEN_WRITE_IN_MAIN_CYCLE{
+            all_steps
+        }
+        else{
+            print_npy
+        };
+        let write_res = add_additional_info_in_datas_end(&calculation_anim_path, fi, t_maxx, Some(determined_step));
     });
-    println!("Programm had been finished at: {:?}", new_now.duration_since(advection_start));
-}
-/* 
+    let end_of_program = std::time::Instant::now();
+    println!("Programm had been finished at: {:?}", end_of_program.duration_since(advection_start));
+}/* 
 extern crate once_cell;
 extern crate log4rs;
 
