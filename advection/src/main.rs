@@ -494,7 +494,7 @@ let type_of_correction_program = true;
             //Calculate time per cycle, remaining and other time
             let new_cycle = std::time::Instant::now();
             let elapsed_in = begin_of_main.elapsed();
-            println!("\nMain calculation: {:?} ^ {:?}", elapsed_in, new_now.duration_since(begin_of_main));
+             println!("\nMain calculation: {:?} ^ {:?}", elapsed_in, begin_of_main.duration_since(new_now));
             time_dif_in_nanos = maxl_time_nanosecs as f64 - current_time_on_dt;
             if switch_time {
                 //Loops made on real-time 
