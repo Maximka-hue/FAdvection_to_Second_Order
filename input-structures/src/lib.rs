@@ -1084,7 +1084,7 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
                 let maxmod_1 = norm_1(&vprevious, &first_ex, dx, curtime_on_vel, all_steps, a_positive);
                 let maxmod_2 = norm_2(&vprevious,&first_ex, dx, curtime_on_vel, all_steps, a_positive);
                 info!("Founded difference: {} & {}", maxmod_1, maxmod_2);
-                let mut dif_errors =  std::fs::File::open(&dif_path).unwrap();
+                let mut dif_errors =  std::fs::File::create(&dif_path).unwrap();
                 let dif_string_raw = format!("{:.6}, {:.6}, {:.6} {}, {}",
                     curtime_on_dt, maxmod_1, maxmod_2, period,  "\n");
                 let new_position_par = dif_errors.seek(SeekFrom::End(0)).unwrap();
