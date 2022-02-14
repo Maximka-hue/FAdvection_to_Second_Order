@@ -8,14 +8,12 @@ extern crate colorify;
 extern crate colour;
 extern crate colored;
 extern crate clap;
+extern crate rayon;
 use colored::Colorize;
 pub mod initial_data_utils;
-pub use crate::initial_data_utils::{PathBuf,Path, function_utils::{ cfutils::{self, Argumento, 
-    run, parse_pair, parse_three, op_sys, approx_equal, parse_positive_int, create_output_dir}}};
+pub use crate::initial_data_utils::{PathBuf,Path, function_utils::{ cfutils::{self, Argumento, create_safe_file,
+    run, parse_pair, parse_three, op_sys, approx_equal, parse_positive_int, create_output_dir, IS_CHOSEN_WRITE_IN_MAIN_CYCLE}}};
 pub use crate::initial_data_utils::initial_input_structures::{TaskType, TaskTypeCs,BurgerOrder, FileParametres, FileParametresBuilder, initial_information_of_advection};
-use crate::initial_data_utils::function_utils::print_macros::macro_lrls;
-use rustils::parse::boolean::str_to_bool;
-extern crate rayon;
 use rayon::prelude::*;
 //use std::time::{Instant};
 //use chrono::{Local};
@@ -25,8 +23,7 @@ extern crate rand;
 use rand::{prelude::*};
 pub use structopt::StructOpt;
 use clap::{ ColorChoice, Arg, ArgGroup, App};
-use clap::{app_from_crate, arg, crate_name};
-use walkdir::{DirEntry};
+use clap::{crate_name};
 use std::time::{Duration, Instant as SInstant};
 use std::{thread, io::{Write, Seek, SeekFrom}, fs::{self, File, OpenOptions, read_to_string}, env, error::Error};
 use std::sync::{Arc, Mutex};
@@ -44,7 +41,7 @@ pub const ARGUMENTS_PRINT: bool = true;
 pub const PROCESS_DETAIL: bool = true;
 pub const MONOTIZATION_MIN: usize = 50;
 pub const MONOTIZATION_MAX: usize = 350;
-
+pub const SIMPLE_STEP_TYPE: bool = true; //true -all_steps = steps, false - all_steps = steps+2
 
 extern "C" {
     fn smooth_arr_zm_fur(Fs: *mut c_double, Nmax: c_long /*i64*/, smooth_intensity: c_double, Fi: *mut c_double, Ftd: *mut c_double) ->  c_long;
@@ -334,10 +331,10 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
     let paths_hs: HashSet<String> = new_path_obj.clone().into_iter().map(|h| String::from(h.to_string_lossy())).collect();
     let number_of_dif_files = paths_hs.len();
     let mut paths_vec: Vec<String> = paths_hs.into_iter().collect();
-    let mut str_paths: Vec<&str> = paths_vec.iter().map(|s| s.as_ref()).collect();
-    let arc_new_paths=  Arc::new(Mutex::new(paths_vec.clone()));
-    let mut paths_in_option: Vec<Option<PathBuf>> = paths_vec.clone().into_iter().map(|p| Some(PathBuf::from(p))).collect::<Vec<_>>();
-    let mut created_data_directories: Vec<File> = Vec::new();
+    let mut _str_paths: Vec<&str> = paths_vec.iter().map(|s| s.as_ref()).collect();
+    let _arc_new_paths=  Arc::new(Mutex::new(paths_vec.clone()));
+    let mut _paths_in_option: Vec<Option<PathBuf>> = paths_vec.clone().into_iter().map(|p| Some(PathBuf::from(p))).collect::<Vec<_>>();
+    let mut _created_data_directories: Vec<File> = Vec::new();
 //First of all create directories for data .csv/txt storage
     /*paths_in_option.iter_mut().enumerate().for_each(|(fi, fp)| {
         if let Some(path_to_example_file) = fp{
@@ -356,7 +353,7 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         if additional_print { 
             println!("{:#?} - {}", new_init_data, file_i);}
         let files_vecs=  Arc::clone(&files_vec);
-        let create_paths=  Arc::clone(&created_paths);
+        let _create_paths=  Arc::clone(&created_paths);
 //For every preprocessed text ....
         new_init_data.into_par_iter().for_each(|new_init_data| {
         if additional_print {
@@ -372,16 +369,16 @@ pub fn process_files<'a>(new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<u
         created_paths.lock().unwrap().push(new_path_string);
                 //created_data_directories.push(processed_params); 
         let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
-Optional argument(velocity): {dataadd}  {sep} 
-Margin domain: {data3:?} {sep} 
-Time evaluation period: {data4:?} {sep} 
-Boundary type: {data5}  {sep}  
-Initial type: {data6}  {sep}  
-Initial conditions: {data7:?} {sep} 
-Quantity split nodes: {data8:?} {sep} 
+Optional argument(velocity): {dataadd}{sep} 
+Margin domain: {data3:?}{sep} 
+Time evaluation period: {data4:?}{sep} 
+Boundary type: {data5}{sep}  
+Initial type: {data6}{sep}  
+Initial conditions: {data7:?}{sep} 
+Quantity split nodes: {data8:?}{sep} 
 Courant number: {data9}  \n\nThis file was {fnum} with path \n{new_buf:?}",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
             data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
-            data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = ',')).as_bytes());
+            data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = r"\\")).as_bytes());
             if additional_print{
                 println!("{:?} ", err );}
             let eq = new_init_data[0].parse::<i8>().unwrap();
@@ -438,7 +435,7 @@ pub fn preprocess_text_for_parallel<'a>(file: &String, deb: bool, file_number: &
             .expect("While reading occured an error");
         let crude_data: String = file_content.split("\n ").map(|x| str::to_string(x.trim())).collect();
         println!("{:#?}- unprocessed file with lenght: {} in file {} processing\n", crude_data, crude_data.len(), file_number);//let mut sep_sgn = String::new();
-        let io_sgn = ',';//read_string("You can choose the separation sign in the processed file:"); //Какой выбрать знак разделения в обработанном файле
+        //let io_sgn = ',';read_string("You can choose the separation sign in the processed file:"); //Какой выбрать знак разделения в обработанном файле
         let rinsed_data: Vec<&str> = crude_data.split("\n").collect();
         if deb{
             red!("\nRinsed: {:#?} in {file_number} file", &rinsed_data);}
@@ -521,7 +518,7 @@ pub fn main_initialization(steps: usize, debug_init: bool, calculation_path: &st
     let mut second_ex = exact_solvec[1].clone();
     let mut temporary = exact_solvec[2].clone();
     //Needed in 1 and 2 shapes
-    let mut all_steps= vprevious.len()+2;//eliminate in 0/1 shapes additional on bound type knots
+    let mut all_steps= if SIMPLE_STEP_TYPE{steps} else{vprevious.len()+2};//eliminate in 0/1 shapes additional on bound type knots
 //----------Create a lot of txt with differential mistakes and x u(numerical sol.) and exact solution
 let calculation_path = calculation_path.to_string();
 println!("{}", calculation_path);
@@ -551,7 +548,7 @@ let example_data_path = Path::new(&calculation_path[..]).join("example_datas");
 //Now let's create first forms from initial data
 //For this I do need: 1 type of equation 2 initial conditions 3 dx(fragmentation) 4velocity(if eq=1) 4 check_flag_for_partition
 if check_flag_for_partition {
-    assert!(approx_equal(left + steps as f64 * dx, right, 6));
+    assert!(approx_equal(left + all_steps as f64 * dx, right, 6));
     if type_of_initial_cond == 0 || type_of_initial_cond == 1 {
     assert!((centre - (width /2.0)) - left >= 0.0); assert!(right - (centre + (width /2.0)) >= 0.0);
     println!("{}", ansi_term::Style::new().underline().paint("Левая|правая точка треугольник в заданной области"));
@@ -572,7 +569,7 @@ let smax: f64 = match equation{
         match type_of_initial_cond {//First check where will be throughout steps...so it will be inside
             0 => {     
                 if deb_init {
-                    println!(" {} {} {} steps: {} ---- start: {} end: {}", dip_start,  dip_end , node_end, steps, start, end);}
+                    println!(" {} {} {} steps: {} ---- start: {} end: {}", dip_start,  dip_end , node_end, all_steps, start, end);}
                 //----------------Let's pace
                 for n in 0..dip+1 {
                     x_next = start + n as usize;
@@ -627,7 +624,7 @@ let smax: f64 = match equation{
             {pt!(format!("{}", ansi_term::Style::new().underline().paint("Гауссова волна под уравнение переноса")));
             let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
             let cnt_tmp: f64 = 1.0/(width.powi(3) * (std::f64::consts::PI * 2_f64).sqrt());
-            for n in  0..steps {
+            for n in  0..all_steps {
                 let x_next: f64 = start_left as f64 + n as f64 * dx;//this needed to be on "domain" scale
                 vprevious[n] = cnt * (-  ((x_next as f64 - centre).powi(2)  ) / (2.0 * width.powi(2))).exp();//exp^self  
                 println!("This is copy from slice*: {}", first_ex[n]);
@@ -646,7 +643,7 @@ let smax: f64 = match equation{
                 let distance= end_right - start_left;
                 let mut angle: f64;
                 const DOUBLE_PI: f64 = 2.0 * std::f64::consts::PI;
-                for n in  0..steps {
+                for n in  0..all_steps {
                     let x_next = start_left + n as f64 * dx;
                     angle = x_next as f64 * DOUBLE_PI / distance;
                     vprevious[n] = angle.sin();
@@ -659,7 +656,6 @@ let smax: f64 = match equation{
                 pt!(format!("{}", ansi_term::Style::new().underline().paint("Прямая под уравнение переноса")));
                 let alpha = width.clone();//For clarity
                 let c = height.clone();
-                all_steps = steps;
                 vprevious.resize(all_steps, 0.0);
                 first_ex.resize(all_steps, 0.0);
                 second_ex.resize(all_steps, 0.0);
@@ -701,7 +697,7 @@ let smax: f64 = match equation{
                 }
                 height},
             1 => {
-                println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса"));
+                println!("{}", ansi_term::Colour::Yellow.underline().paint("Равнобедренный треугольник под уравнение переноса\n"));
                 for n in 0..dip/2 + 1_usize{//this is not odd dip
                     x_next = start + n;
                     vprevious[x_next] = (height  *2_f64) * (dx * n as f64) /width;
@@ -735,12 +731,12 @@ let smax: f64 = match equation{
                 }
             }
             thread::sleep(Duration::from_millis(50_u64));
-                    let max_value = *vprevious.iter().max_by(|a, b| a.total_cmp(b)).expect("Problem with Burger in type one"); 
+                    let max_value = *vprevious.iter().max_by(|a, b| a.total_cmp(b)).expect("Problem with Burger in type one\n"); 
                     max_value},
             2 =>  //Manage with some differences*
             {   let cnt: f64 = 1.0/(width * (std::f64::consts::PI* 2_f64).sqrt());
                 let cnt_tmp: f64 = 1.0/(width.powi(3) * (std::f64::consts::PI * 2_f64).sqrt());
-                for n in  0..steps {
+                for n in  0..all_steps {
                     let x_next: f64 = start_left as f64 + n as f64 * dx;//this needed to be on "domain" scale
                     vprevious[n] = cnt * (-  ((x_next as f64 - centre).powi(2)  ) / (2.0 * width.powi(2))).exp();//exp^self  
                     println!("This is copy from slice*: {}", first_ex[n]);
@@ -755,11 +751,11 @@ let smax: f64 = match equation{
                                     maxvalue
             },
         3 => {
-            pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение Burger")));
+            pt!(format!("{}", ansi_term::Style::new().underline().paint("Синусоида под уравнение Burger\n")));
             let distance= end_right - start_left;
             let mut angle: f64;
             const DOUBLE_PI: f64 = 2.0 * std::f64::consts::PI;
-            for n in  0..steps {
+            for n in  0..all_steps {
                 let x_next = left + n as f64 * dx;
                 angle = x_next as f64 * DOUBLE_PI / distance;
                 vprevious[n] = angle.sin();
@@ -846,7 +842,7 @@ fn norm_2(u: &Vec<f64>,w: &Vec<f64>, dx: f64,curtime_on_vel: f64 , all_steps: us
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, first_ex: &mut Vec<f64>, file_to_write: &mut File, fuu: f64, mut fu_next: f64, mut fu_prev: f64, 
     dt: f64, dx: f64, equation: i8, bound: i8, curtime_on_vel: f64, curtime_on_dt: f64, output_time_max:f64 , output_time_rate: f64, a_positive: bool, possgn_smax: bool,i_type: i8, left_boundary: f64,alpha:f64, c:f64,
-        all_steps: usize, buf_def: &PathBuf, period: usize, debug_init: bool, write_gen: bool, fi: usize)-> std::io::Result<f64>{
+        all_steps: usize, buf_def: &PathBuf, period: usize, debug_init: bool, write_gen: bool, fi: usize, mut once: bool)-> std::io::Result<(f64, bool)>{
     let mut x_next: f64;
     let mut string_raw: String = String::new();
     println!("Opened {:?}", file_to_write.metadata()?);
@@ -855,7 +851,7 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
         //Doing forward scheme
         for k in 1..all_steps-1 {// from first to prelast
             x_next = left_boundary + k as f64 * dx;
-            let mut l = (k as f64- (curtime_on_vel/dx).floor()) as usize;
+            let l = (k as f64- (curtime_on_vel/dx).floor()) as usize;
             fu_next = match equation {
                 0=> fuu * vprevious[k+1],
                 1=> vprevious[k+1] * vprevious[k+1] / 2.0,
@@ -865,7 +861,8 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
                 1=> vprevious[k] * vprevious[k] / 2.0,
                 _ =>  0.0};
             inner_vector[k] = vprevious[k] - (dt/dx)*(fu_next - fu_prev);
-            if debug_init{ println!("Inner: {}, previous: {}\n dt{}, dx{} and divide {}", inner_vector[k], vprevious[k] ,dt, dx,  dt/dx); }
+            if debug_init{ 
+                println!("Inner: {}, previous: {}\n dt{}, dx{} and divide {}", inner_vector[k], vprevious[k] ,dt, dx,  dt/dx); }
 /*            if equation==0{ 
             string_raw = if l>=all_steps{
             l = l % all_steps;
@@ -932,40 +929,43 @@ pub fn main_cycle_first_order(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f
     let mut new_output_time_max = output_time_max;
     let new_buf_def = buf_def.clone();
     //This will create dif error per horizont
-    let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
-    let else_dif_path = dif_path.clone();
-    if (curtime_on_dt - output_time_max) > 0.0 {
-        let mut dif_errors =  std::fs::File::create(&dif_path).unwrap();
-        dif_errors.write_all("t, norm1, norm2\n0,0,0\n".as_bytes()).expect("write failed"); 
+    let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period", i_type));
+    let else_dif_path = dif_path.clone();//Because PathBuf doesn't implement copy Trait
+    let mut dif_errors = create_safe_file(None, Some(&dif_path), false).unwrap();
+    if once {
+        dif_errors.write_all("t, norm1, norm2, period\n0,0,0,0\n".as_bytes()).expect("write failed"); 
+        once = false;
     }
+    if IS_CHOSEN_WRITE_IN_MAIN_CYCLE{
     for k in 1..(all_steps - 1_usize){
         x_next = left_boundary + k as f64 * dx;
         write_in_cycle(equation, k,  curtime_on_vel, curtime_on_dt, all_steps, x_next, fu_prev, fu_next, dt, dx, 
             alpha, c, first_ex, vprevious, file_to_write, debug_init);
         }
+    }
         if (curtime_on_dt - output_time_max) > 0.0 {
-            let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
+            let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period", i_type));
             let else_dif_path = dif_path.clone();
             //thread::sleep(std::time::Duration::from_secs(1_u64));
             let mut maxmod_1 = norm_1(&vprevious, &first_ex, dx, curtime_on_vel, all_steps, a_positive);
             let maxmod_2 = norm_2(&vprevious,&first_ex, dx, curtime_on_vel, all_steps, a_positive);
             info!("Founded difference: {} & {}", maxmod_1, maxmod_2);
-            let mut dif_errors =  std::fs::File::open(&else_dif_path).unwrap();
-            let dif_string_raw = format!("{:.6}, {:.6}, {:.6} {}",
-                curtime_on_dt, maxmod_1, maxmod_2, "\n");
+            let mut dif_errors =  create_safe_file(None, Some(&dif_path), false).unwrap();//The same as above- must open
+            let dif_string_raw = format!("{:.6}, {:.6}, {:.6}, {}, {}",
+                curtime_on_dt, maxmod_1, maxmod_2, period, "\n");
             let new_position_par = dif_errors.seek(SeekFrom::End(0)).unwrap();
                 println!("end of differr file: {:?}", new_position_par);
                 let err = dif_errors.write_all(&dif_string_raw[..].as_bytes());
                 println!("{err:?}");
         new_output_time_max+= output_time_rate;
         }
-            Ok(new_output_time_max)
+            Ok((new_output_time_max, once))
 }
 fn write_in_cycle(equation: i8, k: usize,  curtime_on_vel: f64, curtime_on_dt: f64, all_steps: usize, x_next: f64, fu_prev: f64, fu_next: f64, dt:f64, dx:f64,
     alpha:f64, c:f64, first_ex: &mut Vec<f64>, vprevious: &mut Vec<f64>, file_to_write: &mut File, debug_init: bool) -> std::io::Result<()>{
     let mut string_raw: String = String::new();
     let mut l = k as f64 - (curtime_on_vel/dx).floor();
-    println!("{} ... {}", l, k);
+    if debug_init{println!("Old shift = {} ... on step {}", l, k);}
     if equation==0{
         string_raw = if l<=0.0 {
             l = (l % all_steps as f64).abs();
@@ -976,12 +976,13 @@ fn write_in_cycle(equation: i8, k: usize,  curtime_on_vel: f64, curtime_on_dt: f
             x_next, first_ex[l as usize], vprevious[k], "\n")
         }
         else{
-            l = l % all_steps as f64;
+            l = (l % all_steps as f64).abs();
             format!("{:.6}, {:.6}, {:.6}{}",
                 x_next, first_ex[l as usize],
                 vprevious[k], "\n")
         };
-        if debug_init{println!("String raw: {string_raw} \n and real values: {} {} {}\n expression1: {:9}, expression2: {:9},fu_next{}, fu_prev{}", x_next, vprevious[k], 
+        if debug_init{
+            println!("String raw: {string_raw} \n and real values: {} {} {}\n expression1: {:9}, expression2: {:9},fu_next{}, fu_prev{}", x_next, vprevious[k], 
             first_ex[l as usize], dt/dx * fu_next ,  dt * fu_prev/dx, fu_next, fu_prev);}
         file_to_write.write_all(&string_raw[..].as_bytes()).unwrap();
     }
@@ -1000,8 +1001,8 @@ fn write_in_cycle(equation: i8, k: usize,  curtime_on_vel: f64, curtime_on_dt: f
 }
 pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut Vec<f64>, prediction: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
     first_ex: &mut Vec<f64>, fuu: f64, mut fu_next: f64, mut fu_prev: f64, mut fp_next: f64, mut fp_prev: f64, dt: f64, dx: f64, equation: i8, bound: i8, all_steps: usize, debug_init: bool,
-            type_of_correction_program: bool, smooth_intensity: f64, alpha:f64, c:f64, a_positive: bool,period: usize, i_type: i8, fi: usize,
-            file_to_write: &mut File, buf_def: &PathBuf, left_boundary: f64, curtime_on_vel: f64, curtime_on_dt: f64, output_time_max:f64 ,  output_time_rate: f64)-> std::io::Result<f64> {
+            type_of_correction_program: bool, smooth_intensity: f64, alpha:f64, c:f64, a_positive: bool,period: usize, i_type: i8, fi: usize, once:bool,
+            file_to_write: &mut File, buf_def: &PathBuf, left_boundary: f64, curtime_on_vel: f64, curtime_on_dt: f64, output_time_max:f64 ,  output_time_rate: f64)-> std::io::Result<(f64, bool)> {
     let mut x_next: f64;
     for k in 1..all_steps-1 {// from second(cause of overflow in prediction[k-1]) to prelast
 //First intermidiate future step
@@ -1065,11 +1066,10 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
             {inner_vector[all_steps-1] = inner_vector[1];}
         let new_buf_def = buf_def.clone();
         //This will create dif error per horizont
-        let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
-        let else_dif_path = dif_path.clone();
+        let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period", i_type));
         let mut new_output_time_max = output_time_max;
-            if (curtime_on_dt - output_time_max) > 0.0 {
-                let mut dif_errors =  std::fs::File::create(dif_path).unwrap();
+            if once{
+                let mut dif_errors =  std::fs::File::create(&dif_path).unwrap();
                 dif_errors.write_all("t, norm1, norm2\n0,0,0\n".as_bytes()).expect("write failed"); 
             }
             for k in 0..all_steps {
@@ -1077,17 +1077,16 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
                 write_in_cycle(equation, k,  curtime_on_vel, curtime_on_dt, all_steps, x_next, fu_prev, fu_next, dt, dx, 
                     alpha, c, first_ex, vprevious, file_to_write, debug_init);
                 }
-                println!("Here");
             if (curtime_on_dt - output_time_max) > 0.0 {
                 let dif_path = new_buf_def.join(format!("differ_errors_it{0}_period{1}", i_type, period));
                 let else_dif_path = dif_path.clone();
                 //thread::sleep(std::time::Duration::from_secs(1_u64));
-                let mut maxmod_1 = norm_1(&vprevious, &first_ex, dx, curtime_on_vel, all_steps, a_positive);
+                let maxmod_1 = norm_1(&vprevious, &first_ex, dx, curtime_on_vel, all_steps, a_positive);
                 let maxmod_2 = norm_2(&vprevious,&first_ex, dx, curtime_on_vel, all_steps, a_positive);
                 info!("Founded difference: {} & {}", maxmod_1, maxmod_2);
                 let mut dif_errors =  std::fs::File::open(&dif_path).unwrap();
-                let dif_string_raw = format!("{:.6}, {:.6}, {:.6} {}",
-                    curtime_on_dt, maxmod_1, maxmod_2, "\n");
+                let dif_string_raw = format!("{:.6}, {:.6}, {:.6} {}, {}",
+                    curtime_on_dt, maxmod_1, maxmod_2, period,  "\n");
                 let new_position_par = dif_errors.seek(SeekFrom::End(0)).unwrap();
                     println!("end of differr file: {:?}", new_position_par);
                     let err = dif_errors.write_all(&dif_string_raw[..].as_bytes());
@@ -1095,7 +1094,7 @@ pub fn main_cycle_with_correction(vprevious: &mut Vec<f64>, inner_vector: &mut V
                 thread::sleep(std::time::Duration::from_secs(1_u64));
         new_output_time_max+= output_time_rate;
         }
-                    Ok(new_output_time_max)
+        Ok((new_output_time_max, once))
 }
 
 pub fn monotization_rs(inner_vector: &mut Vec<f64>, first_correction: &mut Vec<f64>, second_correction: &mut Vec<f64>,
@@ -1252,3 +1251,12 @@ pub fn calculate_output_time_vec_based_on_outtime_rate(all_steps: usize, current
 //as it from beginning had value i, then will be 2i, 3i...
     (x_index, y_index, new_output_time_rate)
     }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn it_works() {
+        let result = 2 + 2;
+        assert_eq!(result, 4);
+    }
+}
