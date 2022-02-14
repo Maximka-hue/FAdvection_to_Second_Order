@@ -755,55 +755,12 @@ pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
         }
     }
 }
-/*
-fn wf(_path: Option<&Path>) -> Result<(), Error> {
-    let current_dir = env::current_dir()?;
-    println!(
-        "Let's get access to current dir)\nEntries modified in the last 1 hour in {:?}:",
-        current_dir);
-    for entry in fs::read_dir(current_dir)? {
-        let entry = entry?;
-        let path = entry.path();
 
-        let metadata = fs::metadata(&path)?;
-        let last_modified = metadata.modified()?.elapsed().unwrap().as_secs();
-
-        if last_modified < 1 * 3600 && metadata.is_file() && path.ends_with(".rs") || path.ends_with("txt"){
-            println!(
-                "Last modified: {:?} seconds,
-                is read only: {:?},
-                size: {:?} bytes,
-                filename: {:?}",
-                last_modified,
-                metadata.permissions().readonly(),
-                metadata.len(),
-                path.file_name().ok_or("No filename").expect("File wf error"),
-            );
-        }
-    let path_to_read = Path::new("save_some_statistic.txt");
-    let stdout_handle = Handle::stdout()?;
-    let handle = Handle::from_path(path_to_read)?;
-
-    if stdout_handle == handle {
-        return Err(Error::new(
-            ErrorKind::Other,
-            "You are reading and writing to the same file",
-        ));//"You are reading and writing to the same file"
-    } else {
-        
-        let file = File::open(&path_to_read)?;
-        let file = BufReader::new(file);
-        for (num, line) in file.lines().enumerate() {
-            println!("{} : {}", num, line?.to_uppercase());
-        }
-    }
-    }    Ok(())
-}
 ///Some almost usefulness stuff 
 fn goodbye() -> String {
     "さようなら".to_string()
 }
-
+/*
 #[allow(missing_docs)]
 #[macro_export]
 #[warn(unused_macros)]
