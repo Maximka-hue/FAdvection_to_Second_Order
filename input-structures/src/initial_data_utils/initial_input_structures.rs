@@ -1,779 +1,516 @@
-//Errors in dark red, cyan for info
+//#[crate_type = "staticlib"]
+///Deduce types of variables, store arguments from parsing input
+///Create file structures from which programm will read data
+use crate::initial_data_utils::function_utils::{cfutils::{Argumento, ArgumentParseFilesError, approx_equal, parse_three, parse_pair, preprocess_text, run},
+    print_macros::{ rainbowify, flush_styles, 
+    macro_lrls::{pt, mypt, generate_random_parameters}}};
+/* Building struct */
+pub use derive_builder::Builder;
 pub use std::borrow::Cow;
-use crate::initial_data_utils::function_utils::print_macros::macro_lrls::{pt};
-extern crate os_type;
-use os_type::{ OSType};
-extern crate path_clean;
-use handle::Handle;
-use log::{info, warn};
-use path_clean::PathClean;
-use csv::Writer;
-use std::{thread, cmp, str::FromStr, 
-    io::{self, SeekFrom, Seek, ErrorKind, BufRead, BufReader, Write},
-    path::{Path, PathBuf}, {time::{ Duration}}, fs::{self, OpenOptions, File}, env};
-use named_tuple::named_tuple;
-//use std::path::{Path, PathBuf};
-extern crate custom_error;
-use custom_error::custom_error;
-#[path="./custom_colours.rs"]
-pub mod custom_colours;
-use walkdir::{WalkDir, DirEntry};
-pub use custom_colours::*;
-/* Stylisation */
-#[warn(unused_imports)]
-pub use colour::*;
-#[warn(unused_imports)]
-pub use tcprint::*;
-pub use colorify::*;
-pub use simple_colors::{white, red, printlnc, Style as SimStyle,Color as SimColor};
-use std::fmt::{Debug, Formatter};
-#[warn(unused_imports)]
-use text_colorizer::*;
-use termion;
-use std::error::Error as SError;//**** 
+pub use std::default::Default;
+use std::fs::{self, File, OpenOptions};
+pub use std::path::{self, PathBuf, Path};
+use std::time::{self, Instant};
+use tcprint::{Color as TColor, ColorSpec};
+use std::{io::Write, env, thread};
+use std::sync::{Mutex, Arc};
+use itertools::{Itertools};
+const SWITCH_TIME: bool= false;
+use std::collections::HashSet;
+use std::process;
+use std::{io::ErrorKind, error::{Error as SError}};
 type StdResult<T> = std::result::Result<T, Box<dyn SError>>;
-use glob;
-//use dao_ansi::color::kinds::{ForegroundColor, BackgroundColor, PrimaryColor};
+///This enumerattion determine type of task: Burger or Advection.
+///Specificity of the **first** entered argument (type of equation)
+//Специфика введенного первого аргумента (типа уравнения)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TaskType{
+    Burger(BurgerOrder, String),//It's only to choose type of equation 
+    Transfer{a: f64},  //,u0_1:f32,u0_2:f32,u0_3:Option<f32>},
+}
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum BurgerOrder{
+    BurgerFirstOrder, 
+    BurgerSecondOrder,
+    Arbitrary
+}
+impl Default for TaskType {
+    fn default() -> Self { TaskType::Transfer{a: 1_f64} }
+}
+///This is for specifying some context in which TaskType will be used.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TaskTypeCs{
+    pub burger_cs_first_order: ColorSpec,
+    pub burger_cs_second_order: ColorSpec,
+    pub burger_cs_world_time: ColorSpec,
+    pub burger_cs_step_time: ColorSpec,
+}
+///Implementation uses crate __tcprint__.
+impl Default for TaskTypeCs {
+    fn default() -> Self {
+        // By default, pet names are printed in bold blue.
+        let mut burger_cs_first_order = ColorSpec::new();
+        let mut burger_cs_second_order = ColorSpec::new();
+        let mut burger_cs_world_time = ColorSpec::new();
+        let mut burger_cs_step_time = ColorSpec::new();
+        burger_cs_first_order.set_fg(Some(TColor::Blue)).set_bold(true);
+        burger_cs_second_order.set_fg(Some(TColor::Green)).set_bold(true);
+        burger_cs_world_time.set_fg(Some(TColor::Cyan)).set_underline(true);
+        burger_cs_step_time.set_fg(Some(TColor::Yellow)).set_underline(true);
+        TaskTypeCs{burger_cs_first_order,
+            burger_cs_second_order: burger_cs_second_order,
+            burger_cs_world_time, burger_cs_step_time}
+    }
+}
 
-
-pub const  SLEEP_PASS: u16 = 0;
-pub const  SLEEP_LOW: u16 = 100;
-pub const  SLEEP_NORMAL: u16 = SLEEP_LOW * 2;
-pub const  SLEEP_HIGH: u16 = SLEEP_NORMAL * 2;
-pub const  SLEEP_MAX: u16 = SLEEP_HIGH * 2; 
-pub const  ALL_TIMES: [u16; 5] = [SLEEP_PASS, SLEEP_LOW, SLEEP_NORMAL, SLEEP_HIGH, SLEEP_MAX];
-
-pub const  ARGUMENTO_DBGOUT: bool = true;
-pub const DEFAULT_ELEMENTS_PER_RAW: usize = 11;
-pub const IS_CHOSEN_WRITE_IN_MAIN_CYCLE: bool = true;
-
-pub fn op_sys() -> OSType {
-    let os = os_type::current_platform();
-    println!("Type: {:?}", os.os_type);
-    println!("Version: {}", os.version);
-    match os_type::current_platform().os_type {
-        os_type::OSType::OSX => {
-            println!("This is probably an apple laptop!");
-            println!("cargo:rustc-link-lib=framework=CoreFoundation");
-        }
-        os_type::OSType::Ubuntu => {
-            println!("This is running Ubuntu Linux!");
-        }
-        _ => {
-            if cfg!(windows) {
-                println!("this is windows");
+//____________________________Input file data_____________________________________________________
+//This struct creates new file_process manually
+#[derive(Debug, Clone, Builder, PartialEq)]
+#[builder(build_fn(validate = "Self::validate_parameters"))]
+pub struct FileParametres{
+    #[builder(public, default = "0_i8")]
+    pub eq_type: i8,
+    #[builder(default = "(0 as f64, 1 as f64)")]
+    pub margin_domain:(f64, f64),
+    pub time_eval_period_stage: (f64, f64, Option<bool>),
+    pub bound_type: i8,
+    pub init_type: i8,
+    pub init_conditions: (f64, f64, Option<f64>, Option<f64>),
+    pub quantity_split_nodes: f64,
+    #[builder(setter(into))]
+    pub n_corant: f64,
+//#[builder(setter(into, strip_option), default)]- don't work
+//will be last background_mc additional_correction
+    pub add_args: (Option<TaskType>, Option<i8>, Option<bool>)
+    //pub add_args: Vec<Option<TypeTsk>, Option<i8>, Option<bool>> I want like this, but don't know way
+}
+///Boundary, time and equation check in parameters
+impl FileParametresBuilder {
+    fn validate_parameters(&self) -> std::result::Result<(), String>{//io::ErrorKind
+        if let Some(ref eq_type) = self.eq_type {
+            match *eq_type {
+                //I know that i will be integer
+                i if i < 0 => {pt!("First less than 0, no such type equation", "Impl"); red!("\nNothing right in equation!");
+                return Err(format!("Invalid number: {}", i))},//ErrorKind::InvalidData
+                i if i > 1 => {pt!("First more than one, no such type equation", "Impl"); red!("\nNothing right in equation!");
+                return Err(format!("Invalid number: {}", i))},
+                _ => return Ok(())
             }
-            else{
-                println!("Unknown Operating System");}
+        }//Notice false and equal start & end time points, then will be checked this circomference
+        if let Some(time_way) = self.time_eval_period_stage.unwrap_or((0_f64, 0_f64, Some(false))).2 {
+            let input_time_boundary =  self.time_eval_period_stage.unwrap_or((0_f64, 0_f64, None));
+            if time_way == true {
+                //check for real-time
+                return Ok(())
+            }
+            else {
+                if approx_equal(input_time_boundary.0, input_time_boundary.1, 4) {
+                //.... They must not be approximately less then 3 decimal points
+                return Err(format!("Time boundary is too close for calculation: {} ~ {}", input_time_boundary.0, input_time_boundary.1 ));
+                }
+                else {
+                    red!("Incorrect time specification: {}", self.time_eval_period_stage.unwrap().0);
+                    pt!("Please correct programm time boundary", "dbg");
+                    red!("Nothing right in time!");
+                    return Err(format!("Invalid time: must be {:.3}>{:.3}",
+                        input_time_boundary.0,
+                        input_time_boundary.1))
+                }
+                return Ok(());
             }
         }
-        os.os_type
+            let boundary = self.margin_domain.unwrap();//_or((0_f64, 0_f64)
+            //(time_period.0 - time_period.1).abs() < std::f32::MIN 
+            let left = boundary.0;
+            let right = boundary.1;
+            let qsn = self.quantity_split_nodes.unwrap_or(100_f64);
+            let domain_ends_difference = (left - right).abs();
+            let dx = domain_ends_difference / qsn;
+            if approx_equal(boundary.0, boundary.1, 3) {
+                return Err(format!("Domain boundary is too close for calculation: {} ~ {}", boundary.0, boundary.1 ));
+            }
+            else if (left - right) < 0.0 {
+                self.margin_domain.unwrap().0 = right;
+                self.margin_domain.unwrap().1 = left;
+                pt!("Boundary ends was swapped!");
+            }
+            else if approx_equal(left + dx as f64 * qsn, right, 6){
+                pt!("With accuracy 10e-6 left + ... = right")
+            }
+            else if qsn == 3.0 || qsn ==4_f64{
+                panic!("Quantity of nodes too few!")
+            }
+            else if approx_equal(dx, 0.000001, 6) {
+                panic!("Fragmentation is too small!")
+            }
+            return Ok(());
+        /*
+        {
+            println!("Incorrect Domain input");
+            panic!("Domain is 0!");
+        }//Check not to divide further by 0 in Transfer task
+        else if self.eq_type.unwrap_or(0_i8) == 0
+            {if let Some(velocity_) = self.add_args.clone().unwrap().0
+                {// if there is smth in additional arguments...
+                if velocity_ == (TaskType::Transfer{a: 0_f32}) {
+                println!("Transfer build must be not 0!");
+                pt!("Please correct transfer parameter or change type equation", None);
+                println!("Nothing right in time!");panic!("{:?}",TaskType::Transfer{a:0_f32})}
+                else{println!("Input transfer velocity is {:?}", velocity_);
+                    return Ok(())
+                    }
+                }Ok(())}*/
+    //return Ok(())
     }
-
-pub fn approx_equal (a: f64, b: f64, dp: u8) -> bool {
-        let p = 10f64.powi(-(dp as i32));
-        (a-b).abs() < p
-    }
-// Note the use of braces rather than parentheses.
-custom_error!{pub ArgumentParseFilesError
-    AmountOfFiles{error_description: String, code: u8} = "Problem with file quantities{error_description}\n   error code {code}.",
-    FileInitialization{error_description: String, code: u8} = "Problem with Initialization{error_description}\n   error code {code}.",
-    FileBuilder{error_description: String, code: u8} = "Problem with Builder{error_description}\n   error code {code}.",
-    DebugFormat            = "Debug implementation error"
 }
-
-// Foreground Color:前景色（文本颜色）Black Red Green Magenta Cyan Reset
-// Background Color:背景颜色 White
-pub enum PrintStyle {
-    Time,
-    Loop,
-    Debug,
-    Impl,
-    Dft,
-}
-impl simple_colors::custom::Style for PrintStyle {
-    fn get_style_code(&self) -> String {
-        match self {
-            // Style1 will be bold and light blue
-            PrintStyle::Time => "\x1b[1m\x1b[94m".to_string(),
-            // Style2 will be bold and red
-            PrintStyle::Loop =>
-                format!(
-                    "{}{}",
-                    SimStyle::Italic.get_style_code(),
-                    SimColor::Magenta.get_style_code()
-                ),
-                PrintStyle::Debug =>
-                format!(
-                    "{}{}",
-                    SimStyle::Bold.get_style_code(),
-                    SimColor::Red.get_style_code()
-                ),
-                PrintStyle::Impl =>
-                format!(
-                    "{}{}",
-                    SimStyle::Underlined.get_style_code(),
-                    SimColor::Cyan.get_style_code()
-                ),
-                PrintStyle::Dft =>
-                format!(
-                    "{}{}",
-                    SimStyle::Dark.get_style_code(),
-                    SimColor::White.get_style_code()
-                ),
+//*****************************************************************************************************************************  
+impl FileParametres {
+    pub fn first_initializing(order_of_equation: u16) -> std::result::Result<FileParametres, ArgumentParseFilesError> {
+        let task_order:BurgerOrder = if let  0..=2 = order_of_equation { 
+            BurgerOrder::BurgerFirstOrder
         }
-    }
-}
-impl PrintStyle{
-    pub fn string_value(&self) -> String{
-        let value = 
-            match self {
-            PrintStyle::Time => "Time",
-            PrintStyle::Loop => "Loop",
-            PrintStyle::Debug => "Debug",
-            PrintStyle::Impl => "Impl",
-            PrintStyle::Dft => "Dft",
+        else if order_of_equation == 2 {
+            BurgerOrder::BurgerSecondOrder
+        }
+        else{
+            BurgerOrder::Arbitrary
         };
-        value.to_string()
+        let datas = FileParametresBuilder::default()
+            .eq_type(0)
+            .time_eval_period_stage((0 as f64, 0 as f64, None))
+            .margin_domain((0 as f64, 0 as f64))
+            .bound_type(0)
+            .init_type(0)
+            .init_conditions((0f64, 0_f64, None, None))
+            .quantity_split_nodes(0_f64)
+            .n_corant(0 as f64)
+            .add_args((Some(TaskType::Burger(task_order, "Some(None) speed initial".to_string())), Some(0_i8), Some(false)))
+            .build().unwrap();//.map_err(|_| ErrInTransferTask::FileParams)
+        println!("{}", ansi_term::Colour::Green.paint("Initializing struct with default zeros\n"));
+        Ok(datas)
+    }     
+pub fn new(eq_type: i8,
+    margin_domain:(f64, f64),
+    time_eval_period_stage:(f64, f64, bool),
+    bound_type: i8,
+    init_type: i8,
+    init_conditions: (f64, f64, f64, f64),
+    quantity_split_nodes: f64,//Option<i32>,
+    n_corant: f64,
+    add_args: (TaskType, i8, bool)) -> Result<FileParametres, ()> {
+        let new_file_prms = FileParametresBuilder::default()
+            .eq_type(eq_type)
+            .time_eval_period_stage((time_eval_period_stage.0, time_eval_period_stage.1 , Some(time_eval_period_stage.2)))
+            .margin_domain((margin_domain.0, margin_domain.1))
+            .bound_type(bound_type)
+            .init_type(init_type)
+            .init_conditions((init_conditions.0, init_conditions.1, Some(init_conditions.2), Some(init_conditions.3)))
+            .quantity_split_nodes(quantity_split_nodes)
+            .n_corant(n_corant)
+            .add_args((Some(add_args.0), Some(add_args.1), Some(add_args.2)))
+            .build().unwrap();
+        Ok(new_file_prms)
     }
 }
-impl Debug for PrintStyle {
-    fn fmt(&self, f: &mut Formatter) -> Result<(), std::fmt::Error> {
-        write!(f, "PrintStyle: {:?}", self.string_value())
+pub fn new_from_str(eq_type: String,
+    margin_domain:(f64, f64),
+    time_eval_period_stage:(f64, f64, bool),
+    bound_type: String,
+    init_type: String,
+    init_conditions: (f64, f64, f64, f64),
+    quantity_split_nodes: String,//Option<i32>,
+    n_corant: String,
+    add_args: (TaskType, i8, bool)) -> FileParametres {
+        FileParametres{eq_type: eq_type.trim().parse::<i8>().unwrap(), //ret: trim-slice, parse- to specified type
+            margin_domain: (margin_domain.0, margin_domain.1),
+            bound_type: bound_type.trim().parse().expect(" "),
+            init_type: init_type.trim().parse().unwrap(),
+            init_conditions:(init_conditions.0, init_conditions.1, Some(init_conditions.2), Some(init_conditions.3)),
+            quantity_split_nodes: quantity_split_nodes.trim().parse().unwrap(),
+            n_corant: n_corant.trim().parse().unwrap(),
+            time_eval_period_stage: (time_eval_period_stage.0, time_eval_period_stage.1 , Some(time_eval_period_stage.2)), 
+            add_args: (Some(add_args.0), Some(add_args.1), Some(add_args.2)),
     }
 }
-
-//_____________________________________________________//
-named_tuple!(
-    #[derive(Clone, Debug, Default, PartialEq)]
-    pub struct ChooseSleepTime<'a> {
-    pub reason: &'a str,
-    pub flag_and_time: (Vec<bool>, Vec<u32>),
-    time: [u16; ALL_TIMES.len()],
+//*****************************************************************************************************************************
+pub fn parse_into_file_parameters(RANDOM_TRANSLATE_MARGINE_BOUNDARY: bool){
+    let (mut eq_type, mut bound_type,mut init_type,mut add_args,
+        mut time_eval_period_stage, mut init_conditions, mut margin_domain,
+        mut quantity_split_nodes, mut n_corant, mut velocity):
+        (i8, i8, i8, i8,
+        (f64, f64, bool), (f64, f64, f64, f64), (f64, f64),
+        f64, f64, f64) = (0i8, 0i8, 0i8, 0i8, (0f64, 0f64, false), (0f64, 0f64, 0f64, 0f64), (0f64, 0f64), 0f64, 0f64, 0f64);
+    let random_parameters = generate_random_parameters!().unwrap();
+    let int_input = random_parameters.0;
+    let float_input = random_parameters.1;
+    assert_eq!(int_input.len(), 4);
+    assert_eq!(float_input.len(), 11);
+    if let Some((req_type, rbound_type, rinit_type, radd_args)) = int_input.into_iter().tuples().next(){
+        eq_type= req_type; bound_type= rbound_type; init_type= rinit_type; add_args= radd_args;
+    };
+    if let Some((rtime_eval_period_stage, rt_one, rinit_conditions, ri_one, ri_two, ri_three, rmargin_domain, rm_one, rquantity_split_nodes, rn_corant, rvelocity)) = 
+        float_input.into_iter().tuples().next(){
+       //This is arbitrary function for reducing output time[second argument]
+        time_eval_period_stage = (rt_one, rtime_eval_period_stage / (if rt_one>1.0{rt_one % 3.0} else{rt_one * 10.0 }), SWITCH_TIME);
+        init_conditions = (rinit_conditions, ri_one, ri_two, ri_three);
+        if RANDOM_TRANSLATE_MARGINE_BOUNDARY{ 
+            let mar_dif = rm_one - rmargin_domain;
+            margin_domain = (0.0, if mar_dif< 1.0 {mar_dif * 4.0} else{ mar_dif });
+        }
+        else{
+            margin_domain = (rmargin_domain, rm_one);
+        }
+        quantity_split_nodes = rquantity_split_nodes;
+        n_corant = rn_corant;
+        velocity = rvelocity;
+        println!("Parameters will be: \ntime_eval_period_stage: {}\ninit_conditions: {init_conditions:#?}\n margin_domain: {}\ntime_eval_period_stage: {}
+        \tn_corant: {n_corant} ",
+        ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(240)).fg(ansi_term::Colour::Fixed(45)).paint(format!("{:#?}", time_eval_period_stage)),
+        ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(240)).fg(ansi_term::Colour::Fixed(45)).paint(format!("{:#?}", margin_domain)),
+        ansi_term::Colour::Cyan.on(ansi_term::Colour::Fixed(50)).fg(ansi_term::Colour::Fixed(200)).paint(format!("{:#?}", quantity_split_nodes)));
+    }
+    //let transfer_velocity = thread_rng().gen_range(0..10);
+    let all_datas = FileParametres::new(eq_type, margin_domain,
+            time_eval_period_stage, bound_type, init_type, init_conditions,
+            quantity_split_nodes, n_corant,
+        //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
+        (TaskType::Transfer{a: velocity}, add_args, false)).expect("Initialization in random generation");
+}
+/**/
+type StdtResult<T> = std::result::Result<Vec<T>, Box<dyn SError>>;
+fn process_clfiles<'a>(_datas: FileParametres, new_path_obj: &'a mut Vec<PathBuf>, num_files: Option<usize>, db: &bool) 
+-> StdtResult<FileParametres>
+{ use tutil::crayon::Style;
+    use tutil::crayon::Color::*;
+    let db = *db;//unsafe{db as *const bool};
+    //Creating from parsed arguments in command line Struct Argumento
+    let args: Vec<String> = env::args().collect();
+        let argumento = Argumento::new(&args).unwrap_or_else(|err| {
+            eprintln!("{} {}", Style::new().foreground(Red).bold().paint("Problem parsing arguments: {}"), err);
+            process::exit(1);
+        });
+    //
+        if let Err(e) = run(&argumento.clone()) {
+            eprintln!("{}", Style::new().foreground(Red).bold().paint(format!("Application error: {}", e)));
+            process::exit(1);
+        }
+//Some prerequisites for processing input files
+    if let Some(num_files)= num_files{
+        if num_files==0 {panic!()} else if num_files>5 { pt!("I hope only on less then 5 files)");
+            panic!()};}//process::exit()
+    let num_files= num_files.unwrap();//hide earlier veriable
+    if db {
+        println!(" {}" , num_files);}
+    let mut fiter = argumento.filenames.chunks(num_files);
+//Process every chunk of 2,3 etc parts in threads
+    let fp= FileParametres::first_initializing(1).unwrap();
+//let mut vec_of_processes= vec![fp; argumento.filename.len()];
+//let mut vec_of_processes= vec![PathBuf::new(); argumento.filename.len()];
+    let files_vec: Arc<Mutex<Vec<FileParametres>>> = Arc::new(Mutex::new(Vec::with_capacity(num_files as usize *2)));
+    let mut paths_buf: Vec<PathBuf>= Vec::<PathBuf>::new();
+    while let Some(next_fvec)= fiter.next(){//divide by num_files(3) per cycle
+        let mut iterable= next_fvec.iter();
+        let next_elem= iterable.next().unwrap();//above checked- Some exist
+        if db {println!("Next file in bundle: {:?} - Current file: {:?}", fiter.next(), next_elem);}
+        let clone_arg1 = next_elem.clone();//check above- has at least value one
+        let mut clone_arg2: PathBuf= PathBuf::new();
+        let mut clone_arg3: PathBuf= PathBuf::new();
+        let mut clone_arg4: PathBuf= PathBuf::new();
+        let mut clone_arg5: PathBuf= PathBuf::new();
+        match num_files{
+            1=> {let bw= &mut paths_buf;
+                bw.push(PathBuf::from(clone_arg1));
+                drop(clone_arg2);drop(clone_arg3);drop(clone_arg4);drop(clone_arg5);}
+            2=> {drop(clone_arg3);drop(clone_arg4);drop(clone_arg5);
+                let bw= &mut paths_buf;
+                bw.push(PathBuf::from(clone_arg1));
+                if let Some(clone_2) = iterable.next(){
+                    clone_arg2= PathBuf::from(clone_2);
+                    bw.push(clone_arg2);}},
+3=> {drop(clone_arg5);drop(clone_arg4);
+    let bw= &mut paths_buf;
+    bw.push(PathBuf::from(clone_arg1));
+        if let Some(clone_2) = iterable.next(){
+            clone_arg2= PathBuf::from(clone_2);
+            bw.push(clone_arg2);}
+        if let Some(clone_3) = iterable.next(){
+            clone_arg3= PathBuf::from(clone_3);
+            bw.push(clone_arg3);}
+        }
+4=> {drop(clone_arg5);
+let bw= &mut paths_buf;
+bw.push(PathBuf::from(clone_arg1));
+    if let Some(clone_2) = iterable.next(){
+        clone_arg2= PathBuf::from(clone_2);
+        bw.push(clone_arg2);}
+    if let Some(clone_3) = iterable.next(){
+        clone_arg3= PathBuf::from(clone_3);
+        bw.push(clone_arg3);}
+    if let Some(clone_4) = iterable.next(){
+        clone_arg4= PathBuf::from(clone_4);
+        bw.push(clone_arg4);}}
+5=> {pt!("5 files you choose(max)");
+let bw= &mut paths_buf;
+bw.push(PathBuf::from(clone_arg1));
+if let Some(clone_2) = iterable.next(){
+    clone_arg2= PathBuf::from(clone_2);
+    bw.push(clone_arg2);}
+if let Some(clone_3) = iterable.next(){
+    clone_arg3= PathBuf::from(clone_3);
+    bw.push(clone_arg3);}
+if let Some(clone_4) = iterable.next(){
+    clone_arg4= PathBuf::from(clone_4);
+    bw.push(clone_arg4);}
+    if let Some(clone_5) = iterable.next(){
+        clone_arg5= PathBuf::from(clone_5);
+        bw.push(clone_arg5);}},
+_ => (),}
+for el in paths_buf.iter(){
+let npb= el.clone();
+new_path_obj.push(npb);
+}
+let temp_vec= paths_buf.clone();//Clone all vector!
+//let mut borrowed_path= paths_buf.clone();
+if db{println!("Paths_buf: {:?} - Temp_vec: {:?}", &paths_buf , &temp_vec);}
+let paths_hs: HashSet<PathBuf> = temp_vec.into_iter().collect();//remain unique file names
+//else if from beggin create HashSet, I would need to check on insert returned value every if let ...
+//___________________________________________________
+//fetch and modify file data _ извлекаем и изменяем данные файла
+let arc_new_path_obj=  Arc::new(Mutex::new(paths_hs));//.clone()
+let files_vec = Arc::clone(&files_vec);
+//let mut threads = Vec::with_capacity(argumento.filenames.len());
+crossbeam::scope(|spawner| {
+spawner.builder()
+    .spawn(|_| println!("{}", ansi_term::Colour::Green.dimmed().on(ansi_term::Colour::Blue).paint("A child thread is running in place processing files")))
+    .unwrap();
+//let mut files_vec_ref= &mut files_vec;
+for (fi, file) in next_fvec.into_iter().enumerate() {
+    let files_vecs=  Arc::clone(&files_vec);
+    let fnames= Arc::clone(&arc_new_path_obj);
+    let process_handle = spawner.spawn(move |_| { 
+//let io_sgn: String; let mut new_init_data: Vec<String>;
+let  (new_init_data, io_sgn) =  preprocess_text(file).unwrap();
+    if db {println!("New updated vector\n{:#?}", &new_init_data);}
+    let (x_min, x_max) = parse_pair::<f64>(new_init_data[1].as_str(), ':').expect("Second argument margin_domain must be tuple of pair");
+    let (i1,i2,i3) = parse_three::<f64>(new_init_data[5].as_str(), ':').expect("Forth argument is init_conditions, must be three digits here");
+    let (t1, t2) = parse_pair::<f64>(new_init_data[2].as_str(), ':').expect("3d argument is time, also three digits");
+    if db {println!("Domain{:?}, Time{:?}, Initial conditions{:?}", (x_min,x_max), (t1,t2), (i1,i2,i3));}
+//I had passed several files, so i need several new files, where will store treated datas
+//Создаем файл с именованными полями
+//let mut temp_directory = env::temp_dir();
+//temp_directory.push("/src");
+let (new_buf , mut processed_params)= create_output_dir(fi, num_files).expect("In creating output files error ");
+    let pb= new_buf.clone();
+    let boo= fnames.lock().unwrap().insert(pb);
+if boo {
+let err= write!(&mut processed_params, "Equation type:{data1}  {sep} 
+    Optional argument(velocity): {dataadd}  {sep} 
+    Margin domain: {data3:?} {sep} 
+    Time evaluation period: {data4:?} {sep} 
+    Boundary type: {data5}  {sep}  
+    Initial type: {data6}  {sep}  
+    Initial conditions: {data7:?} {sep} 
+    Quantity split nodes: {data8:?} {sep} 
+    Courant number: {data9}  ", data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
+    data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
+    data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = io_sgn);
+    println!("{:?} ", err );
+let err= processed_params.write_all((format!("equation_type:{data1}  {sep} 
+    add_arg: {dataadd}  {sep} 
+    margin_domain: {data3:?} {sep} 
+    time_eval_period_stage: {data4:?} {sep} 
+    bound_type: {data5}  {sep}  
+    init_type: {data6}  {sep}  
+    init_conditions: {data7:?} {sep} 
+    quantity_split_nodes: {data8:?} {sep} 
+    n_corant: {data9}  ",data1 = new_init_data[0], data3 = (x_min,x_max), data4 =  (t1,t2),//parse_pair(&init[2..4],","),
+    data5 = new_init_data[3], data6 = new_init_data[4], data7 =(i1,i2,Some(i3)),// parse_three(String::as_str(String::from(init[6..8])),","),  
+    data8 = new_init_data[6], data9 = new_init_data[7], dataadd =  new_init_data[8], sep = io_sgn)).as_bytes());
+    println!("{:?} ", err );
+    let all_datas =  FileParametres::new(new_init_data[0].parse::<i8>().unwrap(), (x_min,x_max),
+    (t1, t2, false), new_init_data[3].parse::<i8>().unwrap(), new_init_data[4].parse::<i8>().unwrap(), (i1, i2, i3, 0_f64),
+    new_init_data[6].parse::<f64>().unwrap(), new_init_data[7].parse::<f64>().unwrap(),
+    //Here I pass additional arguments!If not 0=> will be BURGER type, if !=0, then type TRANSFER
+    (TaskType::Transfer{a: new_init_data[8].trim().parse().unwrap_or(0_f64)}, 0_i8, false)).unwrap();
+    if db{println!("{}{:#?}\n",ansi_term::Colour::Cyan.on(ansi_term::Colour::Green).paint("From file: "), all_datas);}
+    //then push all in earlier created vector for storing processed files
+    files_vecs.lock().unwrap().push(all_datas);
+}
+else{println!("{}", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).
+    fg(ansi_term::Colour::Yellow).paint("This file was already processed"));
+    }
 });
-
-impl ChooseSleepTime<'static>{
-    pub fn add_default_time<'a>() -> ChooseSleepTime<'a>{
-    //let StartSleep: ChooseSleepTime =
-        ChooseSleepTime::new("", (Vec::<bool>::new(), Vec::new()), ALL_TIMES)
-    }
-    pub fn get_time(&self, get_t: u64) -> u16{
-        if get_t< 6{
-            match get_t{
-                0 => self.time()[0],
-                1 => self.time()[1],
-                _ => 0_u16,
-            }
-        }
-        else{
-            0_u16
-        }
-    }
-    pub fn add_duration(self, add_this: u64, calculated: Option<bool>){
-        if let Some(is_calculate) = calculated{
-            if is_calculate { 
-                std::thread::sleep(Duration::from_millis(add_this as u64));}
-        }
-        else{
-            match add_this{
-                0 =>  std::thread::sleep(Duration::from_millis(self.get_time(0_u64) as u64)),
-                1 => std::thread::sleep(Duration::from_millis(self.get_time(0_u64) as u64)),
-                _ => println!("Something wrong with sleeping")
-            }
-        }
-    }
-    /*
-    pub fn add_duration(self, add_this: u32, calculated: Option<bool>){
-        let to_add_bool: &mut Vec<bool> = &mut self.flag_and_time().0;
-        let to_add_time: &mut Vec<u32> = &mut self.flag_and_time().1;
-        if let Some(is_calculate) = calculated{
-            if is_calculate { 
-                std::thread::sleep(Duration::from_millis(add_this as u64));
-                //to_add.0.push(true);
-                to_add_time.push(add_this);}
-            self.flag_and_time().1.push(add_this);
-        }
-        else{
-            match add_this {
-                0 => {std::thread::sleep(Duration::from_millis(SLEEP_PASS as u64)); println!("Nothing to add")},
-                1 => {std::thread::sleep(Duration::from_millis(SLEEP_LOW  as u64));
-                    //to_add.0.push(false);
-                    to_add_time.push(SLEEP_LOW as u32);},
-                2 => {std::thread::sleep(Duration::from_millis(SLEEP_NORMAL  as u64));
-                    //to_add.0.push(false);
-                    to_add_time.push(SLEEP_NORMAL as u32);},
-                _ => println!("Incorrect input"),
-            }
-        }
-    }*/
+let message_from_thread="The child thread ID: ".to_string();
+let len_dots= message_from_thread.len();
+println!("{m:?} {0:?}", process_handle.thread().id(), m= message_from_thread);
+let repeated: String= std::iter::repeat(".").take(len_dots).collect();
+println!("{:?}", repeated);
+    }//Enum fi files!    //assert!(res.is_ok());
+}).unwrap();//Crossbeam!
+/*threads.into_iter().for_each(|thread| {
+println!("{m:?} {0:?}", thread.thread().id(), m= message_from_thread);
+    thread
+        .join();
+        //.expect("The thread creating or execution failed !")
+});*/
+};//Process all files...
+let result: Vec<FileParametres> = files_vec.lock().unwrap().to_vec().clone();
+drop(files_vec);
+println!("Processed: {:#?}", result);
+Ok(result)  
 }
-
-//Обработка аргументов командной строки ref &
-pub fn run<'a>(argumento: &'a Argumento)-> Result<(), Box<dyn SError>>
-//dyn «динамический» объект типаж 
-{
-    let mut contents;
-    //let args= & argumento;
-    //let quant_f = if argumento.filename.len() < 3 {argumento.filename.len()} else{3};
-     //(0..quant_f).map(|i| {
-        //let aa= &args;
-        for file in argumento.filenames.iter(){
-            println!("Next file will be: {}", file);
-            contents = fs::read_to_string(file)
-                    .expect("Something wrong");
-println!("With text content in {}:\n{}", file, &contents);}
-    //});
-    Ok(())
-}
-pub fn create_output_dir(mut fnum: usize, num_files: usize, should_sleep: bool, init_dir: Option<&String>) -> StdResult<(usize, PathBuf, String, File )> {
+fn create_output_dir(fnum: usize, num_files: usize) -> StdResult<( PathBuf, File )>{
     //Создаем файл с именованными полями
     //let mut temp_directory = env::temp_dir();
     //temp_directory.push("/src");
-    let init_dir = Some(PathBuf::from(init_dir.unwrap()));
-    let path = if let Some(dir) = init_dir{
-            dir}
-        else{env::current_dir().unwrap()};
-    println!("\n{} {}\n", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).fg(ansi_term::Colour::Yellow).paint("The current directory is "), path.display());
-    let new_path = path.join(format!(r"treated_datas_{}", fnum));
-    println!("{} {}\n", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).fg(ansi_term::Colour::Green).paint("new_path is "), new_path.display());
-    fs::create_dir_all(&new_path).unwrap();
-    let parameter_file = new_path.join(format!(r"parameters_nf{}.txt", fnum));
-    fnum +=1;
-    let processed_params =  File::create(&parameter_file).unwrap_or_else(|error| {
-    //Not thread safe! fs::OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&parameter_file).unwrap_or_else(|error| {
+    let path = env::current_dir().unwrap();
+    println!("{} {}", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).fg(ansi_term::Colour::Yellow).paint("The current directory is "), path.display());
+    let new_path = path.join(format!(r"src\treated_datas_{}", fnum));
+    println!("{} {}", ansi_term::Colour::Cyan.on(ansi_term::Colour::Blue).fg(ansi_term::Colour::Green).paint("new_path is "), new_path.display());
+    fs::create_dir_all(&new_path).unwrap(); //env::temp_dir();
+    let temp_fi = new_path.join(format!(r"parameters_nf{}.txt", fnum));
+    //let mut processed_params =  std::fs::File::open(&temp_fi).unwrap();
+    //println!("{:?}", processed_params);
+    let processed_params =  OpenOptions::new().create(true).write(true)/*.mode(0o770)*/.open(&temp_fi).unwrap_or_else(|error| {
         if error.kind() == ErrorKind::NotFound {
-            File::create(&parameter_file).unwrap_or_else(|error| {
+            File::create(&temp_fi).unwrap_or_else(|error| {
                 panic!("Problem creating the file: {:?}", error);
             })
         } else {
             panic!("Problem opening the file: {:?}", error);
         }
     });
-    println!("This will be writen later ... \n{:?} ", processed_params );
-    if should_sleep{
-        thread::sleep(Duration::from_secs(1_u64));
-    }
-    //This determine that file amount greater than fnum.
-    let bu = PathBuf::from("src\\fi_greater_fnum.txt");
-    let next_pathbuf= if fnum < num_files {parameter_file} else {bu};
-    let next_str = next_pathbuf.clone().into_iter().map(|h| /*{let first_psgn = "/".to_owned();
-    first_psgn.push_str(&String::from(h.to_string_lossy())[..]);
-    first_psgn.push_str("/")}*/
-    format!("{}{}{}",  "/", &String::from(h.to_string_lossy())[..],  "/")).collect();
-    Ok((fnum, next_pathbuf, next_str, processed_params))
-}
-    
-
-pub fn write_at_end<W: Write + Seek>(writer: &mut W, amount_of_files: usize) -> io::Result<()> {
-        writer.seek(SeekFrom::End(0))?;
-        for ii in 0..(amount_of_files+1_usize) {
-            writer.write("\n{ii}".as_bytes())?;
-        }
-        // all went well
-        Ok(())
-    }
-fn read_file_or_stdin() -> Result<(), Box<dyn std::error::Error>> {
-    let arg = "-";
-    // These must live longer than `readable`, and thus are declared first:
-    let (mut stdin_read, mut file_read);
-    
-    // We need to ascribe the type to get dynamic dispatch.
-    let readable: &mut dyn io::Read = if arg == "-" {
-        stdin_read = io::stdin();
-        &mut stdin_read
-    } else {
-        file_read = fs::File::open(arg)?;
-        &mut file_read
-    };
-    
-    // Read from `readable` here.
-    
-    Ok(())
-    }
-type MyResult<T> = Result<T, Box<dyn std::error::Error>>;
-pub fn open(filename: &str) -> MyResult<Box<dyn BufRead>> {
-    match filename {
-        "-" => Ok(Box::new(BufReader::new(io::stdin()))),
-        _ => Ok(Box::new(BufReader::new(File::open(filename)?))),
-    }
-}    
-// --------------------------------------------------
-pub fn parse_positive_int(val: &str) -> MyResult<usize> {
-    match val.parse() {
-        Ok(n) if n > 0 => Ok(n),
-        _ => Err(From::from(val)),
-    }
+    println!("This will be writen later ... {:?} ", processed_params );
+    thread::sleep(time::Duration::from_secs(1_u64));
+    let bu = PathBuf::from("src\\unchecked.txt");
+    let next_pathbuf= if fnum < num_files {temp_fi} else {bu};
+    Ok((next_pathbuf, processed_params))
 }
 
-pub fn traverse_not_hidden_files(path_debug_info: bool, maximum_files_to_expect: usize, input_fpath: &PathBuf) -> Vec<PathBuf> {
-    let mut all_txt: Vec<PathBuf> = Vec::new();
-    let walker = WalkDir::new(&input_fpath).into_iter();
-    for entry in walker.filter_entry(|e| !is_dir_hidden(e)) {
-        all_txt.push(PathBuf::from(entry.unwrap().path().clone()));
-        }
-        //First is directory itself
-        let all_txt = all_txt[1..maximum_files_to_expect+1usize].to_vec();
-        if path_debug_info{ 
-        for path_txt in &all_txt{
-            println!("{}", path_txt.display());}
-        }
-        all_txt
-}
-pub fn is_dir_hidden(entry: &DirEntry) -> bool {
-    entry.file_name()
-         .to_str()
-         .map(|s| s.starts_with("."))
-         .unwrap_or(false)
-}
-    // --------------------------------------------------
-#[derive(Debug, Clone)]
-pub struct Argumento{
-    pub query: String,
-    pub filenames: Vec<String>,
-    pub case_sensitive: bool,
-}
-    
-impl Argumento {
-    pub fn new(args: &[String]) -> Result<Argumento, ArgumentParseFilesError>  {
-        if args.len() < 3 {//trace_macros!(true);
-            //I determine the lowest limit of txt args[at least one]
-            return Err(ArgumentParseFilesError::AmountOfFiles{
-                error_description: format!(
-                    "{}parsing args: not enough arguments:
-                    \nThis program expect name main.rs + other txts 
-                    \n\r containing info of initial values", termion::color::Bg(termion::color::Red)),
-                    code: 1})
-                }
-        //Skipping the first argument as it's program name [cargo run main.rs ...]
-        let mut args_vec: Vec<String> = Vec::with_capacity(args[2..].len() as usize); 
-        let case_sensitive = env::var("CASE_INSENSITIVE").is_err();
-        cyan!("{}", case_sensitive);
-        for argument in env::args().skip(2) { //skip name of programm 
-            if argument == "--help" {
-                cyan!("You passed --help as one of the arguments!");
-            }//below(pt/ptc is only convenient print)
-            else if argument.ends_with(".txt"){
-                args_vec.push(argument);
-                    if ARGUMENTO_DBGOUT{// print name of file first time...
-                    pt!("Arguments as supposed determining files.txt", "impl", &args_vec, PrintStyle::Debug);
-                }
-            }
-/*Very important!*/else if argument.starts_with("--") | argument.starts_with("-"){
-                    continue
-            }
-            else{
-                if ARGUMENTO_DBGOUT{
-                pt!("Now support text files only", "debug");}
-            }
-        }
-        cyan!("Vector of passed arguents");
-        if ARGUMENTO_DBGOUT{
-            pt!("Debug check for txt files", "dbg", &args_vec, PrintStyle::Debug);
-        }
-        let query = args[1].clone();
-        println!("{}", "args[1]: {query}".bold().italic());
-        pt!(&query, "impl");
-        let mut vec_ap: Vec<String> = Vec::with_capacity(5*4);
-        for f in args_vec.into_iter(){
-            let filename = f.clone();
-            vec_ap.push(filename);
-    }
-    Ok(Argumento{query,
-        filenames: vec_ap,
-        case_sensitive})
-    }
-}
 
-pub fn preprocess_text(file: &String)-> Result<(Vec<std::string::String>, String), ()>{
-        use std::char;
-            let file_content = fs::read_to_string(&file)
-                .expect("While reading occured an error");
-            let crude_data: String = file_content.split("\n ").map(|x| str::to_string(x.trim())).collect();
-            println!("{:#?}- unprocessed file with lenght: {}\n", crude_data, crude_data.len());//let mut sep_sgn = String::new();
-            let io_sgn = read_string("You can choose the separation sign in the processed file:"); //Какой выбрать знак разделения в обработанном файле
-            match io_sgn.1 { //io::stdin().read_line(&mut io_sgn)
-                n => {if n<5{
-                    println!("choose less than than 2 (or several more) separator(s)");
-                    println!("{} bytes read + 2 for \\n + size(seperator)", n-2);
-                        println!("{}", io_sgn.0);
-                    }
-                else if n > 5 && n< 8{
-                    println!("You choose big sep- {}", io_sgn.0);
-                    }
-                else{println!("To huge sepsign");}}
-                //Err(error) => println!("error: {}", error.0 as u8),     >>>>>>>>>>>>>>>>>>>>>
-            }
-            let rinsed_data: Vec<&str> = crude_data.split("\n").collect();
-            println!("{} {rinsed_data:?}", "Rinsed: ".bold().italic());
-            let mut new_init_data = Vec::with_capacity(25);
-            let mut rubbish = Vec::with_capacity(25);
-            for x in rinsed_data{
-            let mut y =  x.trim_matches(char::is_alphabetic)
-                .replace(","," ").replace("\r"," ").replace("'","").replace(" ","");//.replace(" ",":");
-            let lovely_sgn = '💝';
-            let _lh: usize = '💝'.len_utf8();
-            let mut b = [0; 4];
-            lovely_sgn.encode_utf8(&mut b);
-            if y.contains(char::is_numeric) {
-            //let num: usize= "💝".chars().count();
-                if y.contains('💝') {
-                    let r = y.find('💝');
-                    if let Some(rr)  = r {
-                        let (z, zz) = y.split_at_mut(rr);//.chars().next().unwrap()
-                        let new_z = z.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace("\"","");
-                        let mut new_zz: &str = &zz[..];// = &zz[rr .. ];
-                        new_zz = new_zz.trim_matches(char::is_alphabetic); 
-                        //if let Some(rr) =rr {
-                        //    z = (&z[rr as usize .. ]).to_string()}
-                        rubbish.push(new_zz.to_string());
-                        new_init_data.push(new_z.to_string());
-                    }
-                }
-                else {
-                    y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
-                    new_init_data.push(y);
-                }
-            }
-            else if !y.contains(char::is_numeric) {
-                panic!("Expected that in files would be digits.")
-            }
-                       //println!("{:#?}",&y);
-            else{
-                y = y.trim_matches(char::is_alphabetic).replace("'", "").replace("\\", "").replace(","," ");
-                new_init_data.push(y);
-                }
-            }
-            println!("{} {rubbish:#?}", "Rb_comments: ".bold().italic());
-                    //println!("{}",new_init_data.len());
-                   /*let y = x.retain(|c| c !=',').as_str();
-                    init[0].push_str(y);*/
-        Ok((new_init_data, io_sgn.0))
+pub fn initial_information_of_advection() -> Instant {
+    //let ttti = TaskType::default();//TaskType::Burger(ColorSpec::new()).default();
+    //This will print initial information about the advection programm and me.
+    let now = Instant::now();
+    const PROGRAM_NAME:&'static str = "Equations of transfering and Burgens:1st order";
+    let mut session_number = String::from("Session number \t");
+    session_number.push_str("9\n");
+    session_number.push_str(PROGRAM_NAME);
+    mypt!(session_number.as_str(), "dbg");
+    let mut my_name = String::with_capacity(15);
+    my_name.push_str("Maxim_Mochalov");
+    println!("\nAutor:\t{}", my_name);
+    let fullname = "\tMaxim Mochalov Sergeevich";
+    //println!("length is {}",fullname.len());
+    let mut i = 1;
+    for name in fullname.split_whitespace(){
+        match i {//dark_yellow
+        1 => println!("{i}\t{Name} {name}", Name = rainbowify("name:")),
+        2 => println!("{i}\t{Surname} {name}", Surname = rainbowify("surname:")),
+        3 => println!("{i}\t{Patronymic} {name}", Patronymic = rainbowify("patronymic:")),
+        _ => println!("Nothing suitable")}
+        i+=1;
+        flush_styles();
 }
-    fn read_string(comment:&str) -> (String, u8) {
-        print!("{}", comment);
-        io::stdout().flush().expect("flush");
-        const ILEN: usize = 20;
-        let mut string: String = String::with_capacity(ILEN);
-        let iolen:u8 = io::stdin().read_line(&mut string).ok().expect("Error read line!") as u8;
-        println!("You had written {} bytes", iolen);
-            return (String::from(string.trim()), iolen);
-    }
-pub fn show_shape(all_steps: usize, print_npy: usize, numvec: &Vec<f64>, exactvec: &Vec<f64>, 
-                calculation_path: &PathBuf, nf: usize, desc: &str, time_form: Option<&str>, deb_my: bool){
-    //Will be less than (print_npy - 1) * step_by_step
-        let step_by_step = (all_steps  as f64 /print_npy as f64).floor() as usize;
-        let mut next_vec_index: usize;
-        println!("X, U, U_exact");
-        let end = print_npy * step_by_step - 1_usize;
-            for k in 0..print_npy {
-                next_vec_index = k * step_by_step; 
-                if deb_my{
-                    println!("{}, {:^.5}, {:^.5}", next_vec_index, numvec[next_vec_index], exactvec[next_vec_index]);
-                }
-            }
-        info!("All_steps: {}, {:^.5}, {:^.5}", all_steps, numvec[end], exactvec[end]);
-        let pic_path = calculation_path.join(format!(r"pic_shapes_file_num{}_{}.txt", nf, time_form.unwrap_or("")));
-        let mut pic_file = create_safe_file(None, Some(&pic_path), false).expect("cannot open file");
-        for k in 0..print_npy {
-            next_vec_index = k * step_by_step;
-            pic_file.write_all(format!("{} , {:.5}, {:.5}\n",
-            next_vec_index, numvec[next_vec_index], exactvec[next_vec_index]).as_bytes()).unwrap();
-        }
-        pic_file.write_all(format!("End: {} , {:.5}, {:.5}\n", end, numvec[end], exactvec[end]).as_bytes()).unwrap();
-        pic_file.write_all(format!("^^^{}\n", desc).as_bytes()).unwrap();
+now
 }
-pub fn create_safe_file(ppath_str: Option<&str>, path_buf: Option<&PathBuf>, only_create_once: bool) -> Result<File, std::io::Error>{
-        let path_to_open = if let Some(path_str) = ppath_str{
-            path_str.to_string()
-        }
-        else{
-            String::from(path_buf.unwrap().to_string_lossy())
-        };
-        if only_create_once{
-        Ok(std::fs::File::open(&path_to_open).unwrap_or_else(|error| {
-            if error.kind() == ErrorKind::NotFound {
-                File::create(&path_to_open).unwrap_or_else(|error| {
-                    panic!("Problem creating the file: {:?}", error);
-                })
-            }
-            else {
-                panic!("Problem opening the file: {:?}", error);
-            } 
-        }))
-    }
-    else{
-        Ok(std::fs::File::create(&path_to_open).unwrap_or_else(|error| {
-            panic!("Problem creating the file: {:?}", error);
-        }))
-    } 
-}
-pub fn create_safe_file_with_options(path: PathBuf, create: bool) -> Result<std::fs::File, std::io::Error>{
-    let file = if create {
-        OpenOptions::new().create(true).write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
-        if error.kind() == ErrorKind::NotFound {
-            File::create(&path).unwrap_or_else(|error| {
-                panic!("Problem creating the file: {:?}", error);
-            })
-        } 
-        else {
-            panic!("Problem opening the file: {:?}", error);
-        }
-    })
-}
-    else{
-        OpenOptions::new().write(true).open(&path).unwrap_or_else(|error| {//File::with_options()
-            if error.kind() == ErrorKind::NotFound {
-                File::create(&path).unwrap_or_else(|error| {
-                    panic!("Problem creating the file: {:?}", error);
-                })
-            } 
-            else {
-                panic!("Problem opening the file: {:?}", error);
-            }
-        })
-    };
-    Ok(file)
-}
-fn walk(dir: &Path, cb: &dyn Fn(&PathBuf), recurse: bool) ->
-io::Result<()> {
-    for entry in dir.read_dir()? {
-        let entry = entry?;
-        let path = entry.path();
-        if recurse && path.is_dir() {
-            walk(&path, cb, true)?;
-        }
-        cb(&path);
-    }
-    Ok(())
-}
-type GenericError = Box<dyn SError + Send + Sync + 'static>;
-fn walk_glob(pattern: &str, cb: &dyn Fn(&PathBuf)) -> Result<(),
-    GenericError> {
-        for entry in glob::glob(pattern)? {
-            cb(&entry?);
-        }
-        Ok(())
-    }
-pub fn save_files(dir: &PathBuf, tvector: Vec<f64>, wvector: Option<Vec<f64>>, (steps, left, right): (usize, Option<f64>, Option<f64>), 
-    elements_per_raw: Option<usize>, nf: usize, output_periods: usize, necessity_of_csv: Option<bool>, paraview_format: Option<bool>, my_deb: Option<bool>) 
-    -> std::io::Result<()>{
-        let my_deb = if let Some(debug) = my_deb {
-            debug
-        }
-        else{
-            false
-        };
-//Define variables +++++++++++++++++++++++++++++++++++++++++++++++
-        let repeated_dbg: String= std::iter::repeat(".").take(20).collect();
-        let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
-            elements_per_raw
-        }
-        else{
-            DEFAULT_ELEMENTS_PER_RAW
-        };
-        let mut string_raw: String;
-        let left = left.unwrap_or(0.0);
-        let right = right.unwrap_or(0.0);
-        let distance = right - left;
-        let h_fl: f64 = steps as f64/raw_size as f64; 
-        let h = (steps/raw_size) as usize;
-        println!("h_fl - h: {} ^ {} = {}",h_fl, h, h_fl - h as f64);
-        let mut next_index: usize;
-        let mut x_next: f64;
-        let mut on_line: usize;
-        println!("directory specified {:?} paraview_format: {:?}" , dir, paraview_format);
-        let pypath = dir.join(format!("to_python_{}.txt", nf));//.join(format!(r"\{}", dir.display()))
-        let expypath = dir.join(format!("exact_to_python_{}.txt", nf));
-        let newly_treated = dir.join(format!("treated_datas_{}", nf));
-        let parameters_path = dir.join(format!("parameters_{}.txt", nf));
-        println!("{:?}  ^ {:?} ^ \n{:?}", format!("PyPaths for graphics: \n{:?}", pypath), expypath, parameters_path);
-        let mut exact_vector: Vec<f64> = Vec::with_capacity(tvector.len()+1);
-        let py_path = create_safe_file_with_options(pypath, true)?;
-        if let Some(ex) = wvector{
-            create_safe_file_with_options(expypath, true)?;
-            exact_vector= ex;
-        }
-
-//This will create csv like txt files to turn them in paraview window ------------------------------------
-        if paraview_format.unwrap_or(false){
-            let switch_path_paraview = dir.join("paraview_datas");
-            println!("quantity parts size: {}\n paraview path: {:?}\n Is it directory? {}", raw_size, switch_path_paraview, switch_path_paraview.is_dir());
-            let end_of_traverse_exact = tvector.len() as f64 / output_periods  as f64;
-            let end_of_traverse = (tvector.len() as f64 / output_periods  as f64).floor() as usize;
-            println!("What will be print step? - {}", end_of_traverse_exact - end_of_traverse as f64);
-            let new_paraview_dir_to_create = newly_treated.join("paraview_datas");
-            let new_paraview_dir = newly_treated.join("paraview_datas");
-            fs::create_dir_all(new_paraview_dir_to_create)?;
-//How it write? 
-            for y_index in 0.. end_of_traverse {
-                //Check that vector doesn't contain all zeros
-                //println!("{:?} \n {:?}\n^", tvector, exact_vector);
-                if my_deb {
-                    println!("y_index {}, Condition on write, Any of elements!=0: {}",
-                    y_index, tvector[y_index..y_index+(raw_size-1) as usize].iter().any(|&v| !approx_equal(v, 0.0, 3)));
-                }
-                if tvector[y_index..y_index+(raw_size-1) as usize].iter().any(|&v| !approx_equal(v, 0.0, 3)){
-                    let updating_x_u_w = new_paraview_dir.join(format!("x_u_w_{0}_{1}.txt", nf, y_index));
-                    let path = Path::new(&new_paraview_dir);
-                    if my_deb{
-                        println!("switch_path_x_u_w : {:?}", updating_x_u_w);
-                    }
-                    println!("Listing '{}'", path.display());
-                    let mut paraview_file_x_u_w = create_safe_file(None, Some(&updating_x_u_w), false)?;//superfluously
-                    println!("{:?}" , paraview_file_x_u_w);
-                    paraview_file_x_u_w.write_all("x, exv, numv\n".as_bytes())?;
-                    for k in 0..raw_size {
-                        on_line = h*k;
-                        x_next = left + on_line as f64;
-                        next_index = k + y_index * raw_size;
-                        string_raw = format!(r"{:.6}, {:.6}, {:.6}{}",
-                            x_next, exact_vector[next_index], tvector[next_index], "\n");
-                        paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
-                    }
-                    if y_index != end_of_traverse-1{
-                        string_raw = format!(r"{:.6}, {:.6}, {:.6}{}", 
-                            steps , exact_vector[raw_size + y_index * raw_size], tvector[raw_size + y_index * raw_size], "\n");
-                        paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
-                    }
-                    else{
-                        string_raw = format!(r"{:.6}, {:.6}, {:.6}{}", steps , exact_vector[exact_vector.len() -1], tvector[tvector.len() -1], "\n");
-                        paraview_file_x_u_w.write_all(&string_raw[..].as_bytes())?;
-                    }
-                }
-            }
-        }
-//Else I can pass it into csv format
-    let necessity_of_csv = necessity_of_csv.unwrap_or(false);//shaded variable
-    let mut new_switch_path: PathBuf;
-    if necessity_of_csv == true {
-        let ub = format!(r"csv_{0}", nf);
-        new_switch_path = dir.join(ub);
-        let csv_data_dir = Path::new(&new_switch_path);
-        let err = fs::create_dir_all(csv_data_dir);
-        if let Some(err) = err.err(){
-            warn!("{}", err);
-        }
-    }
-    let mut csv_array = vec![vec![0.0; 2_usize * raw_size];
-        cmp::max(tvector.len(), exact_vector.len())];
-    let mut x_index: usize;
-        //let mut wtr_inner;
-        //let mut temp_csv;
-        Ok(())
-}
-
-pub fn add_additional_info_in_datas_end(dir: &PathBuf, nf: usize, t_max: Option<f64>,  elements_per_raw: Option<usize>)-> std::io::Result<()>{
-    let raw_size: usize= if let Some(elements_per_raw) = elements_per_raw{
-        elements_per_raw
-    }
-    else{
-        DEFAULT_ELEMENTS_PER_RAW
-    };
-    //First check if I had alredy written info 
-    let param_treated = dir.join(format!("treated_datas_{0}", nf));
-    let param_ex_to_read = param_treated.join( format!("parameters_nf{0}.txt", nf));
-    printc!(red: "File with parameters - {:?},\n",  param_ex_to_read.display());
-    printc!(yellow: "which exists? {:?}\n",  param_ex_to_read.exists());
-    let path_to_read = Path::new(&param_ex_to_read);
-    let mut is_written_already: bool = false;
-    //This won't create file, so func create_safe_file can be applied
-    {
-        let prm_file= create_safe_file(None, Some(&param_ex_to_read), true)?;  
-    let mut reader_parameters = io::BufReader::new(&prm_file);
-    let mut pbuf = String::new();
-    'cycle: while let nbytes = reader_parameters.read_line(&mut pbuf).ok().expect("ERRMSG")//.expect("reading from cursor won't fail")
-    {
-        println!("\tBytes readed :{}", nbytes);
-        if nbytes !=0{
-            if pbuf.to_lowercase().contains("printed elements per raw"){
-            println!("Found in file {:#?}", pbuf);
-            is_written_already = true;
-            }
-            else{
-                continue
-            }
-        }
-        else{
-        break 'cycle
-        }
-    }
-    pbuf.clear();
-}
-    let mut prm_file_write= create_safe_file(None, Some(&param_ex_to_read), false)?; 
-    //Write additional info about reducing steps in graphics and spec for burger max_time
-    let new_position_par = prm_file_write.seek(SeekFrom::End(0)).unwrap(); 
-    if !is_written_already{
-        prm_file_write.write_all(format!("\nprinted elements per raw {}\n", raw_size).as_bytes())?;
-    }
-    if let Some(t_max) = t_max {
-        prm_file_write.write_all(format!("{} Maximum live time in burger task: {}\n","\t", t_max).as_bytes())?;
-    }
-    Ok(())
-}
-//________________________Additional+++++++++++++++++++++++++++++++++++++
-pub fn absolute_path(path: impl AsRef<Path>) -> io::Result<PathBuf> {
-    let path = path.as_ref();
-
-    let absolute_path = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        env::current_dir()?.join(path)
-    }.clean();
-
-    Ok(absolute_path)
-}
-///These functions search delimeters [first from book Jim Blandy and latter my improved version]
-//Ищем несколько разделителей
-pub fn parse_pair<T: FromStr>(s : &str, separator :char) -> Option<(T,T)>{
-    match s.find(separator){
-        None => None,
-        Some(index) => {
-            match (T::from_str(&s[..index]), T::from_str(&s[index+1..])){
-                (Ok(l),Ok(r)) => Some((l, r)),
-                _ => None
-            }
-    }
-}}
-pub fn parse_three<T: FromStr>(s : &str, separator :char) -> Option<(T,T,T)>{
-    let width = separator.len_utf8();
-    match s.find(separator){
-        None => None,
-        Some(index) => {
-            match s[index+width..].find(separator){//1ая ветка
-           /* None => match (T::from_str(&s[..index]), T::from_str(&s[index+1..])){
-            (Ok(_l),Ok(_r)) => None,  //Some((l, r,None)),
-            _ => None*/
-            None => None,
-            Some(indexx) =>{//вторая ветка
-            let indexx = indexx + index + width;
-            match (
-                T::from_str(&s[..index]),
-                T::from_str(&s[index+width..indexx]),
-                T::from_str(&s[indexx+width..])){
-                (Ok(l),Ok(r),Ok(c)) =>Some((l, r,c)),
-                _ => None
-                }
-            }
-        }
-        }
-    }
-}
-
-///Some almost usefulness stuff 
-fn goodbye() -> String {
-    "さようなら".to_string()
-}
-/*
-
-#[allow(missing_docs)]
-#[macro_export]
-#[warn(unused_macros)]
-macro_rules! pt {
-    ($a: expr) => {
-        pt($a, None, None)
-    };
-    ($a: expr, $($b: expr),+) =>{
-        pt($a ,..., $b)
-    };
-}
-*/
