@@ -13,7 +13,6 @@ pub use std::path::{self, PathBuf, Path};
 use std::time::{self, Instant};
 use tcprint::{Color as TColor, ColorSpec};
 use std::{io::Write, env, thread};
-use ansi_term::{Style, Colour::*};
 use std::sync::{Mutex, Arc};
 use itertools::{Itertools};
 const SWITCH_TIME: bool= false;
@@ -105,7 +104,7 @@ impl FileParametresBuilder {
                 return Ok(())
             }
             else {
-                if approx_equal(input_time_boundary.0, input_time_boundary.1, 3) {
+                if approx_equal(input_time_boundary.0, input_time_boundary.1, 4) {
                 //.... They must not be approximately less then 3 decimal points
                 return Err(format!("Time boundary is too close for calculation: {} ~ {}", input_time_boundary.0, input_time_boundary.1 ));
                 }
@@ -117,7 +116,7 @@ impl FileParametresBuilder {
                         input_time_boundary.0,
                         input_time_boundary.1))
                 }
-                return Ok(())
+                return Ok(());
             }
         }
             let boundary = self.margin_domain.unwrap();//_or((0_f64, 0_f64)
